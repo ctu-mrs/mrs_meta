@@ -1,0 +1,18 @@
+preprocess:
+
+  # 1 = Livox
+  # 2 = velodyne
+  # 3 = Ouster64
+  # 4 = HESAIxt32
+  # 5 = plain simulation without additional PCL data
+  # 6 = gazebo simulation (x, y, z, intenzity, ring)
+  lidar_type: 1
+
+mapping:
+
+  # Livox MID360 Lidar->IMU
+  extrinsic_T: [ 0.011, 0.02329, -0.04412 ]
+
+  extrinsic_R: [ 1, 0, 0,
+                 0, 1, 0,
+                 0, 0, 1 ]

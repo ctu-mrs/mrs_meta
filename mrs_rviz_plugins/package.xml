@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<package format="3">
+
+  <name>mrs_rviz_plugins</name>
+  <version>2.0.0</version>
+
+  <description>Plugin for rviz to work with the MRS system</description>
+
+  <author email="vrbamato@fel.cvut.cz">Matous Vrba</author>
+  <maintainer email="afzal.ahmad@fel.cvut.cz">Afzal Ahmad</maintainer>
+
+  <license>BSD 3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_ros</buildtool_depend>
+
+  <depend>pluginlib</depend>
+
+  <depend>rviz_common</depend>
+  <depend>rviz_ogre_vendor</depend>
+  <depend>qtbase5-dev</depend>
+  <depend>mrs_msgs</depend>
+
+  <depend>image_transport</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>pcl_msgs</depend>
+
+  <depend>eigen3_cmake_module</depend>
+  <build_depend>eigen</build_depend>
+  <depend>sophus</depend>
+  <depend>libpcl-all-dev</depend>
+  <depend>pcl_conversions</depend>
+
+  <depend>rclcpp</depend>
+  <depend>message_filters</depend>
+  <depend>std_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>

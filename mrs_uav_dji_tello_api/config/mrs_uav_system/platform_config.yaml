@@ -1,0 +1,88 @@
+uav_mass: 1.0
+
+motor_params:
+  n_motors: 4
+  a: 1.0
+  b: 0.0
+
+mrs_uav_controllers:
+
+  se3_controller:
+
+    position_controller:
+
+      translation_gains:
+        p: 1.5 # 2.0
+        d: 0.50 # 0.15
+        i: 0.01
+
+      heading_gains:
+        p: 0.5
+        d: 0.05
+        i: 0.00
+
+mrs_uav_managers:
+
+  estimation_manager:
+
+    state_estimators: [
+      "passthrough",
+    ]
+
+    initial_state_estimator: "passthrough" # will be used as the first state estimator
+    agl_height_estimator: "" # only slightly filtered height for checking min height (not used in control feedback)
+
+  uav_manager:
+
+    midair_activation:
+
+      during_activation:
+        controller: "MidairActivationController"
+        tracker: "MidairActivationTracker"
+
+      after_activation:
+        controller: "Se3Controller"
+        tracker: "MpcTracker"
+
+    min_height_checking:
+      enabled: false
+
+    max_height_checking:
+      enabled: false
+
+  constraint_manager:
+
+    slow:
+
+      horizontal:
+        speed: 0.3
+        acceleration: 0.3
+        jerk: 20.0
+        snap: 20.0
+
+      vertical:
+
+        ascending:
+          speed: 0.5
+          acceleration: 0.5
+          jerk: 20.0
+          snap: 20.0
+
+        descending:
+          speed: 0.5
+          acceleration: 0.5
+          jerk: 20.0
+          snap: 20.0
+
+      heading:
+        speed: 1.0
+        acceleration: 1.0
+        jerk: 10.0
+        snap: 10.0
+
+      angular_speed:
+        roll: 60.0
+        pitch: 60.0
+        yaw: 10.0
+
+      tilt: 60.0 # [deg]

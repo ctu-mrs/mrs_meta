@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<package format="2">
+
+  <name>mrs_octomap_planner</name>
+  <version>1.0.0</version>
+  <description>The Octomap Planner package</description>
+
+  <maintainer email="stibipet@fel.cvut.cz">Petr Stibinger</maintainer>
+  <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
+
+  <license>BSD 3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_ros</buildtool_depend>
+
+  <depend>rclcpp_components</depend>
+  <depend>mrs_modules_msgs</depend>
+  <depend>mrs_lib</depend>
+  <depend>mrs_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>octomap_msgs</depend>
+  <depend>octomap_ros</depend>
+  <depend>mrs_octomap_tools</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>mrs_subt_planning_lib</depend>
+  <depend>dynamic_edt_3d</depend>
+
+
+  <exec_depend>liboctomap</exec_depend>
+  <exec_depend>libeigen3-dev</exec_depend>
+  
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>

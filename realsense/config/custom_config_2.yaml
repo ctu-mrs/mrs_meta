@@ -1,0 +1,15 @@
+# Note - later remappings override earlier ones
+
+/uav1/down_rgbd:
+  ros__parameters:
+    remappings:
+      ~/depth/image_rect_raw: ~/depth/image_raw
+      ~/depth/image_rect_raw/compressed: ~/depth/image_raw/compressed
+      ~/depth/image_rect_raw/compressedDepth: ~/depth/image_raw/compressedDepth
+
+/uav1/up_rgbd:
+  ros__parameters:
+    remappings:
+      ~/depth/image_rect_raw: ~/depth/image_raw
+      ~/depth/image_rect_raw/compressed: ~/depth/image_raw/compressed
+      ~/depth/image_rect_raw/compressedDepth: ~/depth/image_raw/compressedDepth

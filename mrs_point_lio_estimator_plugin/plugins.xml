@@ -1,0 +1,5 @@
+<library path="MrsPointLioEstimator_Estimator">
+  <class type="mrs_point_lio_estimator_plugin::Estimator" base_class_type="mrs_uav_managers::StateEstimator">
+    <description>PointLIO state estimator</description>
+  </class>
+</library>

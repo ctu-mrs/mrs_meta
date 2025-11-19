@@ -1,0 +1,66 @@
+# do not modify these
+root: ./
+name: simulation
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# you can modify these
+startup_window: status
+pre_window: export UAV_NAME=uav1;
+            export PLATFORM_CONFIG=`ros2 pkg prefix mrs_uav_dji_tello_api`/share/mrs_uav_dji_tello_api/config/mrs_uav_system/platform_config.yaml;
+            export USE_SIM_TIME="false";
+            export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+windows:
+  - router:
+      layout: tiled
+      panes:
+        - ros2 run rmw_zenoh_cpp rmw_zenohd
+  - hw_api:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_uav_dji_tello_api tellopy_wrapper.launch.py
+        - ros2 launch mrs_uav_dji_tello_api hw_api.launch.py
+  - core:
+      layout: tiled
+      panes:
+        - ros2 launch mrs_uav_core core.launch.py
+          platform_config:=$PLATFORM_CONFIG
+          world_config:=./config/world_config.yaml
+          custom_config:=./config/custom_config.yaml
+          network_config:=./config/network_config.yaml
+  - status:
+      layout: tiled
+      panes:
+        - ros2 run mrs_uav_status status.sh
+  - flame:
+      layout: tiled
+      panes:
+        - ros2 launch flame_ros flame_ros.launch.py camera_topic:=tellopy_wrapper/rgb custom_config:=./config/flame.yaml
+  - static_tf:
+      layout: tiled
+      panes:
+        - ./config/static_tfs.sh
+  - takeoff:
+      layout: even-vertical
+      panes:
+        - 'history -s ./takeoff.sh'
+        - "history -s ros2 service call /uav1/tellopy_wrapper/zero std_srvs/srv/Trigger '{}'"
+        - "history -s ros2 service call /uav1/uav_manager/midair_activation std_srvs/srv/Trigger '{}'"
+  - land:
+      layout: even-vertical
+      panes:
+        - "history -s ./land.sh"
+  - throw_and_go:
+      layout: even-vertical
+      panes:
+        - "history -s ros2 service call /uav1/tellopy_wrapper/throw std_srvs/srv/Trigger '{}'"
+        - 'history -s ros2 service call /uav1/tellopy_wrapper/zero std_srvs/srv/Trigger "{}"'
+        - 'history -s ros2 service call /uav1/uav_manager/midair_activation std_srvs/srv/Trigger "{}"'
+  - rviz:
+      layout: tiled
+      panes:
+        - ros2 run rviz2 rviz2 -d ./rviz.rviz
+  # - layout:
+  #     layout: tiled
+  #     panes:
+  #       - waitForCore; ~/.i3/layout_manager.sh ./layout.json

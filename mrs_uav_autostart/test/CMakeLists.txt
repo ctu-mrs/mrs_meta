@@ -1,0 +1,18 @@
+find_package(ament_cmake_gtest REQUIRED)
+find_package(ament_cmake_ros REQUIRED)
+find_package(launch_testing_ament_cmake REQUIRED)
+
+function(add_ros_isolated_launch_test path)
+  set(RUNNER "${ament_cmake_ros_DIR}/run_test_isolated.py")
+  add_launch_test("${path}" RUNNER "${RUNNER}" ${ARGN})
+endfunction()
+
+add_subdirectory(./takeoff_should_succeed)
+
+add_subdirectory(./takeoff_should_fail_while_moving)
+
+add_subdirectory(./takeoff_should_fail_outside_safety_area)
+
+add_subdirectory(./takeoff_trigerred_externally)
+
+add_subdirectory(./takeoff_should_fail_topic_check)

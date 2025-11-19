@@ -1,0 +1,18 @@
+
+# ignore temp files
+*~
+doc/*
+
+# ignore vim temp files
+*.swp
+*.swo
+*.swn
+
+# Runtime-python
+*.pyc
+
+act.sh
+generate.sh
+
+debian
+.obj-x86_64-linux-gnu

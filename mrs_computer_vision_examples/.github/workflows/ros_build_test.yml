@@ -1,0 +1,26 @@
+name: ros_build_test
+
+on:
+
+  push:
+    branches: [ ros2_devel ]
+
+    paths-ignore:
+      - '**/README.md'
+
+  schedule:
+    - cron:  '0 8 * * *' # every day at 10am UTC+2
+
+  pull_request:
+    branches: [ ros2 ]
+
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  build:
+    uses: ctu-mrs/ci_scripts/.github/workflows/ros_build_test.yml@ros2

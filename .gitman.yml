@@ -1,0 +1,171 @@
+location: .
+sources:
+  - name: mrs_lib
+    repo: https://github.com/ctu-mrs/mrs_lib.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_msgs
+    repo: https://github.com/ctu-mrs/mrs_msgs.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_multirotor_simulator
+    repo: https://github.com/ctu-mrs/mrs_multirotor_simulator.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_controllers
+    repo: https://github.com/ctu-mrs/mrs_uav_controllers.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_autostart
+    repo: https://github.com/ctu-mrs/mrs_uav_autostart.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_hw_api
+    repo: https://github.com/ctu-mrs/mrs_uav_hw_api.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_managers
+    repo: https://github.com/ctu-mrs/mrs_uav_managers.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_state_estimators
+    repo: https://github.com/ctu-mrs/mrs_uav_state_estimators.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_status
+    repo: https://github.com/ctu-mrs/mrs_uav_status.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_trackers
+    repo: https://github.com/ctu-mrs/mrs_uav_trackers.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_trajectory_generation
+    repo: https://github.com/ctu-mrs/mrs_uav_trajectory_generation.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_gazebo_simulator
+    repo: https://github.com/ctu-mrs/mrs_uav_gazebo_simulator.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_system
+    repo: https://github.com/ctu-mrs/mrs_uav_system.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: ctu-mrs.github.io
+    repo: https://github.com/ctu-mrs/ctu-mrs.github.io.git
+    rev: master
+    scripts: [rm -rf .git]
+
+  - name: mrs_octomap_server
+    repo: https://github.com/ctu-mrs/mrs_octomap_server.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_octomap_planner
+    repo: https://github.com/ctu-mrs/mrs_octomap_planner.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_octomap_tools
+    repo: https://github.com/ctu-mrs/mrs_octomap_tools.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_modules_msgs
+    repo: https://github.com/ctu-mrs/mrs_modules_msgs.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_serial
+    repo: https://github.com/ctu-mrs/mrs_serial.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_rviz_plugins
+    repo: https://github.com/ctu-mrs/mrs_rviz_plugins.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: open_vins
+    repo: https://github.com/ctu-mrs/open_vins.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_open_vins_estimator_plugin
+    repo: https://github.com/ctu-mrs/mrs_open_vins_estimator_plugin.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_vins_republisher
+    repo: https://github.com/ctu-mrs/mrs_vins_republisher.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_vins_imu_filter
+    repo: https://github.com/ctu-mrs/mrs_vins_imu_filter.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_point_lio_estimator_plugin
+    repo: https://github.com/ctu-mrs/mrs_point_lio_estimator_plugin.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: point-lio
+    repo: https://github.com/ctu-mrs/point-lio.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: realsense
+    repo: https://github.com/ctu-mrs/realsense.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_flightforge_simulator
+    repo: https://github.com/ctu-mrs/mrs_uav_flightforge_simulator.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_px4_api
+    repo: https://github.com/ctu-mrs/mrs_uav_px4_api.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_dji_tello_api
+    repo: https://github.com/ctu-mrs/mrs_uav_dji_tello_api.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_apptainer
+    repo: https://github.com/ctu-mrs/mrs_apptainer.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_docker
+    repo: https://github.com/ctu-mrs/mrs_docker.git
+    rev: master
+    scripts: [rm -rf .git]
+
+  - name: mrs_core_examples
+    repo: https://github.com/ctu-mrs/mrs_core_examples.git
+    rev: ros2
+    scripts: [rm -rf .git]
+
+  - name: mrs_computer_vision_examples
+    repo: https://github.com/ctu-mrs/mrs_computer_vision_examples.git
+    rev: ros2
+    scripts: [rm -rf .git]

@@ -1,0 +1,17 @@
+mrs_uav_controllers:
+
+  example_controller:
+
+    antiwindup: true
+
+    pid_gains:
+
+      xyz:
+        p: 1.0
+        i: 0.01
+        d: 0.5
+
+      heading:
+        p: 1.0
+        i: 0.01
+        d: 0.5

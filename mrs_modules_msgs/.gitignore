@@ -1,0 +1,6 @@
+*.swo
+*.swp
+cross_reference/*
+docs_build/*
+doc/*
+.gitman

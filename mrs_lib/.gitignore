@@ -1,0 +1,23 @@
+# ignore Doxygen documentation
+doc
+
+# ignore temp files
+*~
+
+# ignore vim temp files
+*.swp
+*.swo
+*.swn
+
+# Runtime-python
+*.pyc
+
+debian
+.obj-x86_64-linux-gnu
+
+act.sh
+
+# test result logs
+log
+
+ci_scripts

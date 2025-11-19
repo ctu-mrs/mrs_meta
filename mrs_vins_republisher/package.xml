@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="2">
+  
+  <name>mrs_vins_republisher</name>
+  <version>0.0.0</version>
+  <description>The mrs_vins_republisher package</description>
+
+  <author email="bednaj14@fel.cvut.cz">Jan Bednar</author>
+  <maintainer email="bednaj14@fel.cvut.cz">Jan Bednar</maintainer>
+
+  <license>BSD 3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp_components</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>mrs_lib</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>

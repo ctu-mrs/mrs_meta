@@ -1,0 +1,86 @@
+main_timer:
+  rate: 250.0 # [Hz]
+
+prop_at_freq_of_imu: true
+use_imu_as_input: true
+check_satu: true
+init_map_size: 10 # [what units?]
+space_down_sample: true
+point_filter_num: 1 # ? only using one of N points? So of this is 4, it will drop 3 out of 4 points?
+filter_size_surf: 0.5
+filter_size_map: 0.5
+cube_side_length: 1000 # [what units?]
+runtime_pos_log_enable: false
+
+common:
+  con_frame: false # true: if you need to combine several LiDAR frames into one
+  con_frame_num: 1 # the number of frames combined
+  cut_frame: false # true: if you need to cut one LiDAR frame into several subframes
+  cut_frame_time_interval: 0.1 # should be integral fraction of 1 / LiDAR frequency
+  time_lag_imu_to_lidar: 0.0 # Time offset between LiDAR and IMU calibrated by other algorithms, e.g., LI-Init (find in Readme)
+                             # the timesample of IMU is transferred from the current timeline to LiDAR's timeline by subtracting this value
+
+preprocess:
+
+  # 1 = Livox Avia
+  # 2 = velodyne
+  # 3 = Ouster64
+  # 4 = HESAIxt32
+  # 5 = plain simulation without additional PCL data
+  # 6 = gazebo simulation (x, y, z, intenzity, ring)
+  # should be set in the preset file
+  # lidar_type: 5
+
+  scan_line: 64 # how many scan lines, set for velodyne, hesai, livox avia
+  timestamp_unit: 3 # the unit of time/t field in the PointCloud2 rostopic: 0-second, 1-milisecond, 2-microsecond, 3-nanosecond.
+  blind: 1.50 # ignore points closer than this
+  scan_rate: 10
+
+mapping:
+  imu_en: true
+  start_in_aggressive_motion: false # if true, a preknown gravity should be provided in following gravity_init
+  extrinsic_est_en: true # for aggressive motion, set this variable false
+  imu_time_inte: 0.005 # = 1.0 / frequency of IMU
+  satu_acc: 30.0 # the saturation value of IMU's acceleration. not related to the units
+  satu_gyro: 35 # the saturation value of IMU's angular velocity. not related to the units
+  acc_norm: 9.81 # 1.0 for g as unit, 9.81 for m/s^2 as unit of the IMU's acceleration
+  lidar_meas_cov: 0.1
+  acc_cov_output: 500
+  gyr_cov_output: 1000
+  b_acc_cov: 0.0001
+  b_gyr_cov: 0.0001
+  imu_meas_acc_cov: 0.1
+  imu_meas_omg_cov: 0.1
+  gyr_cov_input: 0.01 # for IMU as input model
+  acc_cov_input: 0.1 # for IMU as input model
+  plane_thr: 0.1 # 0.05, the threshold for plane criteria, the smaller, the flatter a plane
+  match_s: 81
+  fov_degree: 360.0
+  det_range: 100.0
+  gravity_align: true # true to align the z axis of world frame with the direction of gravity, and the gravity direction should be specified below
+  gravity: [0.0, 0.0, -9.810] # [0.0, 9.810, 0.0] # gravity to be aligned
+  gravity_init: [0.0, 0.0, -9.810] # [0.0, 9.810, 0.0] # # preknown gravity in the first IMU body frame, use when imu_en is false or start from a non-stationary state
+
+  # should be set in the preset file
+  extrinsic_T: [0.0, 0.0, 0.0]
+  extrinsic_R: [1, 0, 0,
+                0, 1, 0,
+                0, 0, 1]
+
+  vel_cov: 20
+
+odometry:
+  publish_odometry_without_downsample: false
+
+publish:
+
+  tf:
+    fcu: false
+
+  path:
+    enable: true                 # false: close the path output
+    diff_t: 0.1
+    diff_R: 0.1
+
+  scan_publish_en: true         # false: close all the point cloud output
+  scan_bodyframe_pub_en: false  # true: output the point cloud scans in IMU-body-frame

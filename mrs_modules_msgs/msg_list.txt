@@ -1,0 +1,31 @@
+# This file is generated, do NOT modify it by hand
+
+set(msg_files
+  msg/llcp/Llcp.msg
+  msg/mrs_serial/BacaProtocol.msg
+  msg/mrs_serial/GimbalPRY.msg
+  msg/mrs_serial/ParachuteDiagnostics.msg
+  msg/mrs_serial/GripperDiagnostics.msg
+  msg/mrs_serial/SerialRaw.msg
+  msg/mrs_octomap_server/PoseWithSize.msg
+  msg/gnss/RangeInformation.msg
+  msg/gnss/Bestpos.msg
+  msg/gnss/TersusMessageHeader.msg
+  msg/gnss/Bestvel.msg
+  msg/gnss/GPSFix.msg
+  msg/gnss/Gpgga.msg
+  msg/gnss/Gprmc.msg
+  msg/gnss/Gpgst.msg
+  msg/gnss/Time.msg
+  msg/gnss/GpsStatus.msg
+  msg/gnss/Range.msg
+  msg/gnss/Trackstat.msg
+  msg/gnss/Gpgsv.msg
+  msg/gnss/TrackstatChannel.msg
+  msg/gnss/Satellite.msg
+  msg/gnss/Gpgsa.msg
+  msg/gnss/Gpvtg.msg
+  msg/mrs_octomap_planner/OctomapPlannerDiagnostics.msg
+  msg/sensors/SensorInfo.msg
+  msg/mrs_pcl_tools/PclToolsDiagnostics.msg
+)

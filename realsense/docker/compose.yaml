@@ -1,0 +1,21 @@
+services:
+
+  realsense:
+    image: ctumrs/realsense:unstable
+    #build: .
+    privileged: true
+    network_mode: "host"
+    configs:
+      - source: cfg_yaml
+        target: /custom_config.yaml
+        mode: 0444  # read-only permissions
+    command: custom_config:=/custom_config.yaml
+
+configs:
+
+  cfg_yaml:
+    content: |
+      /uav1/rgbd:
+        ros__parameters:
+          remappings:
+            '~/depth/image_rect_raw': ~/depth/image_raw/RRRRRR

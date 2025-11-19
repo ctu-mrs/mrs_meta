@@ -1,0 +1,9 @@
+mrs_uav_trackers:
+
+  example_tracker:
+
+    # will be reconfigurable
+    z_offset: 0.0 # [-]
+
+    # will not be reconfigurable
+    different_parameter: 2

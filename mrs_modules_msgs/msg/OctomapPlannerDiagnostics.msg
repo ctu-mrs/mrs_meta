@@ -1,0 +1,1 @@
+mrs_octomap_planner/OctomapPlannerDiagnostics.msg
