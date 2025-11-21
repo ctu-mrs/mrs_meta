@@ -68,7 +68,7 @@ sources:
   - name: ctu-mrs.github.io
     repo: https://github.com/ctu-mrs/ctu-mrs.github.io.git
     rev: master
-    scripts: [rm -rf .git]
+    scripts: [rm -rf .git versioned_docs]
 
   - name: mrs_octomap_server
     repo: https://github.com/ctu-mrs/mrs_octomap_server.git
@@ -158,7 +158,7 @@ sources:
   - name: mrs_docker
     repo: https://github.com/ctu-mrs/mrs_docker.git
     rev: master
-    scripts: [rm -rf .git]
+    scripts: [rm -rf .git deployment/ros1 simulation/ros1]
 
   - name: mrs_core_examples
     repo: https://github.com/ctu-mrs/mrs_core_examples.git
