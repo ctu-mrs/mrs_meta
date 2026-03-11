@@ -1,13 +1,314 @@
 {
   "repo_notes": [
     {
-      "content": "Primary source rule: Prefer documentation and content coming from the repository sources (code, README, docs/, package manifests, launch/URDF/ROS msg/srv files, CI or build scripts, examples, and tests) of the component repositories included in this mono-repo. Avoid creating a wiki page based solely on the ctu-mrs.github.io folder when the same information can be corroborated by at least one other repository source (file path or commit). If other sources are unavailable, the information may still be used but clearly labelled as uncorroborated."
+      "content": "Primary source rule: Prefer documentation and content coming from the repository sources (code, README, docs/, package manifests, launch/URDF/ROS msg/srv files, CI or build scripts, examples, and tests) of the component repositories included in this mono-repo. Avoid creating a wiki page based solely on the ctu-mrs.github.io folder when the same information can be corroborated by at least one other repository source (file path or commit). If other sources are unavailable, the information may still be used but clearly labelled as uncorroborated"
     },
     {
-      "content": "Do not prune: Avoid automatically dropping folders from the plan unless they are empty. If storage/size limits force omissions, prioritize launch/, msg/, or docs/. If certain folders remain undocumented after one generation run, DeepWiki should surface a short follow-up report including but not limited to a 'skipped or low-coverage folders' section with reasons (e.g., 'no README, many binary files, or exceeded token limit')."
+      "content": "Do not prune: Avoid automatically dropping folders from the plan unless they are empty. If storage/size limits force omissions, prioritize launch/, msg/, or docs/. If certain folders remain undocumented after one generation run, DeepWiki should surface a short follow-up report including but not limited to a 'skipped or low-coverage folders' section with reasons (e.g., 'no README, many binary files, or exceeded token limit')"
     },
     {
-      "content": "Output expectations: Generate pages with clear titles. Each page should include (a) a one-sentence summary, (b) source file links, (c) architecture or dependency diagrams where applicable, and (d) a 'Where to look next' section linking to the repository files and relevant pages in other repositories. When describing system architecture, components, or runtime behavior, prefer inferring structure from source code rather than relying solely on prose documentation, and include a short 'Confidence' note (low|medium|high)."
+      "content": "UAV system focus: Focus documentation on the UAV system architecture, runtime components, and robotics functionality. Avoid pages that primarily document the mrs_meta repository itself, its documentation system, or generic developer tooling unless they are specific to the ROS2 MRS UAV System"
+    },
+    {
+      "content": "Output expectations: Generate pages with clear titles. Each page should include (a) a one-sentence summary, (b) source file links, (c) architecture or dependency diagrams where applicable, and (d) a 'Where to look next' section linking to the repository files and relevant pages in other repositories. When describing system architecture, components, or runtime behavior, prefer inferring structure from source code rather than relying solely on prose documentation, and include a short 'Confidence' note (low|medium|high)"
+    }
+  ],
+  "pages": [
+    {
+      "title": "Overview",
+      "purpose": "Introduce the MRS UAV System repository, summarizing at a high level what it contains and its purpose as a UAV control, estimation, and simulation platform",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Getting Started",
+      "purpose": "Guide users through initial setup, from understanding repository structures to running their first simulation",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Terminology and Key Features",
+      "purpose": "Define key terminology and concepts used throughout the MRS UAV System and detail it's key features and capabilities, including control pipelines, state estimation, mapping, and planning",
+      "parent": "Getting Started",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Prerequisites",
+      "purpose": "Summarize the required knowledge and tools (Linux, Bash, Git, SSH, ROS2, Docker) needed to work with and develop for the MRS UAV system",
+      "parent": "Getting Started",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Bash Shell",
+      "purpose": "Document essential Bash skills including file system navigation, shell scripting, pipes, redirection, and system administration commands",
+      "parent": "Prerequisites",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "SSH Configuration",
+      "purpose": "Explain SSH setup for remote UAV access, including key generation, passwordless authentication, hostname configuration, and file transfer operations",
+      "parent": "Prerequisites",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "C++ and Python",
+      "purpose": "Programming guidelines for development in the MRS ecosystem, covering coding practices, common commands, and typical development workflows",
+      "parent": "Prerequisites",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "ROS2 Development Environment",
+      "purpose": "Comprehensive guide to setting up and working with ROS2 Jazzy, including installation, workspace management, and migration patterns from ROS1",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "ROS2 Installation and Workspace Setup",
+      "purpose": "Detail the process of installing ROS2 Jazzy on Ubuntu 24.04, including Docker-based alternatives",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "ROS1 to ROS2 Migration Patterns",
+      "purpose": "Document key patterns and changes when migrating from ROS1 to ROS2, covering build system, code patterns, and configuration differences",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Colcon Build System",
+      "purpose": "Explain colcon configuration using command-line arguments and YAML files, including build options and workspace-wide settings",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Working with Time",
+      "purpose": "Document rclcpp::Time and rclcpp::Duration usage, clock objects, sleep functions, and time comparisons in ROS2",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Launch Files",
+      "purpose": "Cover ROS2 launch file structure and patterns for configuring and starting multiple nodes",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Publishers and QoS",
+      "purpose": "Document ROS2 publisher creation, Quality of Service (QoS) profiles, and implementing latched publishers with transient_local durability",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Parameters",
+      "purpose": "Cover ROS2 parameter configuration, runtime management, and usage patterns for node configuration",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Workspace Profiles and Mixins",
+      "purpose": "Explain colcon mixins for build configuration profiles, custom mixin creation, and workspace-wide build settings",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "System Architecture and Package Overview",
+      "purpose": "Comprehensive overview of the MRS UAV system architecture, detailing all packages and their relationships",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Architecture Overview",
+      "purpose": "Present the high-level architecture showing how core libraries, UAV management, control, estimation, mapping, and simulation packages interact",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Core Foundation Packages",
+      "purpose": "Document mrs_lib, mrs_msgs, mrs_modules_msgs, and mrs_serial as the foundational libraries providing common utilities and message definitions",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "UAV System Management",
+      "purpose": "Explain mrs_uav_system, mrs_uav_managers, mrs_uav_autostart, and mrs_uav_status for system integration, coordination, and health monitoring",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Control and Navigation Stack",
+      "purpose": "Detail the hierarchical control architecture including mrs_uav_controllers, mrs_uav_trackers, mrs_uav_trajectory_generation, and mrs_octomap_planner",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "State Estimation Framework",
+      "purpose": "Cover the plugin-based state estimator framework including OpenVINS (VIO), Point-LIO (LIO), and the estimator manager for multi-sensor fusion",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Mapping and Planning",
+      "purpose": "Document the octomap-based 3D mapping and planning stack including mrs_octomap_server, mrs_octomap_tools, and mrs_octomap_planner",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Hardware Interfaces",
+      "purpose": "Describe hardware abstraction and interfaces used by MRS (serial links, sensor drivers, mavlink bridges, GPS/RTK integration), and where to find the driver code and configuration",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Simulation Packages",
+      "purpose": "Document the supported simulators (Multirotor, Gazebo, or FlightForge), how to run simulations, and how simulated sensors and actors map to real hardware packages",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Development and Visualization Tools",
+      "purpose": "List the recommended developer tools (rqt, rviz, plotting tools, logging viewers) and workflows for debugging and visualizing MRS UAV behavior",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Docker and Containerization",
+      "purpose": "Explain how Docker is used in MRS for reproducible development and deployment, and point to the repo/CI artifacts that build Docker images",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Building Docker Images",
+      "purpose": "Describe how to build MRS Docker images locally, how CI builds images, and how to customize image contents",
+      "parent": "Docker and Containerization",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Docker FAQ",
+      "purpose": "Collect common Docker issues and solutions encountered when running MRS images (permissions, display forwarding, X11, GPU access, networking)",
+      "parent": "Docker and Containerization",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Advanced Topics",
+      "purpose": "Collect deep-dive topics that require specialized knowledge (RTK integration, altitude handling, plugin architecture and custom node development)",
+      "parent": "System Architecture and Package Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
     }
   ]
 }
