@@ -1,0 +1,13 @@
+{
+  "repo_notes": [
+    {
+      "content": "Primary source rule: Prefer documentation and content coming from the repository sources (code, README, docs/, package manifests, launch/URDF/ROS msg/srv files, CI or build scripts, examples, and tests) of the component repositories included in this mono-repo. Avoid creating a wiki page based solely on the ctu-mrs.github.io folder when the same information can be corroborated by at least one other repository source (file path or commit). If other sources are unavailable, the information may still be used but clearly labelled as uncorroborated."
+    },
+    {
+      "content": "Do not prune: Avoid automatically dropping folders from the plan unless they are empty. If storage/size limits force omissions, prioritize launch/, msg/, or docs/. If certain folders remain undocumented after one generation run, DeepWiki should surface a short follow-up report including but not limited to a 'skipped or low-coverage folders' section with reasons (e.g., 'no README, many binary files, or exceeded token limit')."
+    },
+    {
+      "content": "Output expectations: Generate pages with clear titles. Each page should include (a) a one-sentence summary, (b) source file links, (c) architecture or dependency diagrams where applicable, and (d) a 'Where to look next' section linking to the repository files and relevant pages in other repositories. When describing system architecture, components, or runtime behavior, prefer inferring structure from source code rather than relying solely on prose documentation, and include a short 'Confidence' note (low|medium|high)."
+    }
+  ]
+}
