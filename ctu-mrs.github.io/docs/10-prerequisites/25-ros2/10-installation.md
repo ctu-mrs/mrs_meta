@@ -41,14 +41,15 @@ rosker() {
 
   if docker ps -a --format '{{.Names}}' | grep -xq "$name"; then
     if docker ps --format '{{.Names}}' | grep -xq "$name"; then
-      docker exec -it "$name" ./ros_entrypoint.sh bash -ic "${*:-exec bash}"
+      docker exec -it "$name" /ros_entrypoint.sh bash -ic "${*:-exec bash}"
     else
       docker start -ai "$name"
     fi
   else
-    docker run -it --name "$name" --network=host --privileged \
-      -v "$HOME/:/root/" \
-      -v "/dev:/dev/" \
+    docker run -it --name "$name" --network=host --privileged -e DISPLAY \
+      -w "/root" \
+      -v "$HOME:/root" \
+      -v "/dev:/dev" \
       -v "/etc/hosts:/etc/hosts" \
       "ctumrs/ros_$name:latest" bash
   fi

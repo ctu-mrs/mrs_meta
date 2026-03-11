@@ -55,6 +55,18 @@ def generate_launch_description():
 
     # #} end of custom_config
 
+    # #{ node_name
+
+    node_name = LaunchConfiguration('node_name')
+
+    ld.add_action(DeclareLaunchArgument(
+        'node_name',
+        default_value="point_lio",
+        description="The ROS node name",
+    ))
+
+    # #} end of node_name
+
     # #{ uav_name
 
     uav_name = LaunchConfiguration('uav_name')
@@ -160,7 +172,7 @@ def generate_launch_description():
     node = ComposableNode(
         package='point_lio',
         plugin='point_lio::PointLio',
-        name='point_lio',
+        name=node_name,
         namespace=uav_name,
         parameters=[
             {"use_sim_time": use_sim_time},
@@ -198,7 +210,7 @@ def generate_launch_description():
 
     standalone_container = ComposableNodeContainer(
         namespace=uav_name,
-        name=namespace+'_point_lio_container',
+        name=[node_name, "_container"],
         package='rclcpp_components',
         executable='component_container_mt',
         output="screen",

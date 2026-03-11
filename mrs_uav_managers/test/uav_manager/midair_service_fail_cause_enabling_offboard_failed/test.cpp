@@ -12,11 +12,11 @@ public:
   }
 
   bool test(void);
+
+  std::shared_ptr<mrs_uav_testing::UAVHandler> uh_;
 };
 
 bool Tester::test(void) {
-
-  std::shared_ptr<mrs_uav_testing::UAVHandler> uh;
 
   const std::string uav_name = "uav1";
 
@@ -28,24 +28,18 @@ bool Tester::test(void) {
       return false;
     }
 
-    uh = uhopt.value();
+    uh_ = uhopt.value();
   }
 
   // | ---------- call midair activation in async task ---------- |
 
   {
-    std::cout << "Test: a" << std::endl;
-
-    auto [success, message] = uh->activateMidAir();
-
-    std::cout << "Test: b" << std::endl;
+    auto [success, message] = uh_->activateMidAir();
 
     if (success) {
       RCLCPP_ERROR(node_->get_logger(), "midair activation succeeded, this should not happen: '%s'", message.c_str());
       return false;
     }
-
-    std::cout << "Test: z" << std::endl;
   }
 
   return true;
@@ -63,11 +57,7 @@ int main(int argc, char *argv[]) {
 
   std::cout << "Test: tests finished" << std::endl;
 
-  std::cout << "Test: sleeping using std" << std::endl;
-
   std::this_thread::sleep_for(std::chrono::duration<double>(5.0));
-
-  std::cout << "Test: sleeping using clock" << std::endl;
 
   tester.sleep(2.0);
 

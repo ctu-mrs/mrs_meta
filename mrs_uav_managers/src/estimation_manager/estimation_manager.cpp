@@ -370,6 +370,9 @@ private:
 
   mrs_lib::PublisherHandler<geometry_msgs::msg::QuaternionStamped> ph_orientation_;
 
+  rclcpp::TimerBase::SharedPtr timer_wait_for_time_;
+  void                         timerWaitForTime();
+
   rclcpp::Time                 time_preinit_started_;
   rclcpp::TimerBase::SharedPtr timer_preinit_;
   void                         timerPreinit();
@@ -412,6 +415,7 @@ private:
   bool                                                  failsafe_call_succeeded_ = false;
 
   mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv> srvch_set_world_origin_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv> srvch_update_sa_mgr_world_origin_;
 
   // | ------------- dynamic loading of estimators ------------- |
 
@@ -471,9 +475,26 @@ EstimationManager::EstimationManager(rclcpp::NodeOptions options) : mrs_lib::Nod
 
   sh_control_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
 
-  time_preinit_started_ = clock_->now();
+  timer_wait_for_time_ = node_->create_wall_timer(std::chrono::duration<double>(1.0), std::bind(&EstimationManager::timerWaitForTime, this));
+}
 
-  timer_preinit_ = node_->create_wall_timer(std::chrono::duration<double>(1.0), std::bind(&EstimationManager::timerPreinit, this));
+//}
+
+/* timerWaitForTime() //{ */
+
+void EstimationManager::timerWaitForTime() {
+
+  auto now = clock_->now();
+
+  if (now.nanoseconds() == 0) {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for valid time");
+  } else {
+    time_preinit_started_ = now;
+
+    timer_wait_for_time_->cancel();
+
+    timer_preinit_ = node_->create_wall_timer(std::chrono::duration<double>(1.0), std::bind(&EstimationManager::timerPreinit, this));
+  }
 }
 
 //}
@@ -485,6 +506,7 @@ void EstimationManager::timerPreinit() {
   bool got_data = true;
 
   if (!sh_hw_api_capabilities_.hasMsg()) {
+
     RCLCPP_INFO(node_->get_logger(), "%s hw_api_capabilities message at topic: %s", Support::waiting_for_string.c_str(),
                 sh_hw_api_capabilities_.topicName().c_str());
 
@@ -556,18 +578,18 @@ void EstimationManager::initialize() {
   double      world_origin_x     = 0;
   double      world_origin_y     = 0;
 
-  param_loader.loadParam("world_origin/units", world_origin_units);
+  param_loader.loadParam("mrs_uav_managers/world_origin/units", world_origin_units);
 
   if (Support::toLowercase(world_origin_units) == "utm") {
     RCLCPP_INFO(node_->get_logger(), "Loading world origin in UTM units.");
-    is_origin_param_ok &= param_loader.loadParam("world_origin/origin_x", world_origin_x);
-    is_origin_param_ok &= param_loader.loadParam("world_origin/origin_y", world_origin_y);
+    is_origin_param_ok &= param_loader.loadParam("mrs_uav_managers/world_origin/origin_x", world_origin_x);
+    is_origin_param_ok &= param_loader.loadParam("mrs_uav_managers/world_origin/origin_y", world_origin_y);
 
   } else if (Support::toLowercase(world_origin_units) == "latlon") {
     double lat, lon;
     RCLCPP_INFO(node_->get_logger(), "Loading world origin in LatLon units.");
-    is_origin_param_ok &= param_loader.loadParam("world_origin/origin_x", lat);
-    is_origin_param_ok &= param_loader.loadParam("world_origin/origin_y", lon);
+    is_origin_param_ok &= param_loader.loadParam("mrs_uav_managers/world_origin/origin_x", lat);
+    is_origin_param_ok &= param_loader.loadParam("mrs_uav_managers/world_origin/origin_y", lon);
     mrs_lib::UTM(lat, lon, &world_origin_x, &world_origin_y);
     RCLCPP_INFO(node_->get_logger(), "Converted to UTM x: %f, y: %f.", world_origin_x, world_origin_y);
 
@@ -853,8 +875,9 @@ void EstimationManager::initialize() {
 
   /*//{ initialize service clients */
 
-  srvch_failsafe_         = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/failsafe_out", cbkgrp_sc_);
-  srvch_set_world_origin_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv>(node_, "~/set_world_origin_out", cbkgrp_sc_);
+  srvch_failsafe_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/failsafe_out", cbkgrp_sc_);
+  srvch_set_world_origin_           = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv>(node_, "~/set_world_origin_out", cbkgrp_sc_);
+  srvch_update_sa_mgr_world_origin_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv>(node_, "~/update_world_origin_out", cbkgrp_sc_);
 
   /*//}*/
 
@@ -1474,6 +1497,22 @@ bool EstimationManager::callbackSetWorldOrigin(const std::shared_ptr<mrs_msgs::s
       RCLCPP_WARN(node_->get_logger(), "TransformManager could not set world origin.");
       response->success = false;
       response->message = "TransformManager could not set world origin.";
+      return true;
+    }
+
+    // update Safety Area manager world origin
+    auto res_update = srvch_update_sa_mgr_world_origin_.callSync(request);
+    if (!res_update.has_value() || !res_update.value()->success) {
+      RCLCPP_WARN(node_->get_logger(), "Could not call Safety Area Manager update_world_origin service.");
+      response->success = false;
+      response->message = "Could not call Safety Area Manager update_world_origin service.";
+      return true;
+    }
+
+    if (!res_update.value()->success) {
+      RCLCPP_WARN(node_->get_logger(), "Safety Area Manager could not update world origin.");
+      response->success = false;
+      response->message = "SA Manager could not update world origin.";
       return true;
     }
 

@@ -545,8 +545,8 @@ void PointLio::initialize() {
   // | ------------------------ old main ------------------------ |
 
   cout << "lidar_type: " << lidar_type << endl;
-  init_frame = uav_name + "/" + "point_lio_origin";
-  odom_frame = uav_name + "/" + "fcu";
+  init_frame = uav_name + "/" + "point_lio_world";
+  odom_frame = uav_name + "/" + "point_lio_body";
 
   /* path.header.stamp    = ros::Time().fromSec(lidar_end_time); */
 
@@ -1381,7 +1381,7 @@ bool PointLio::sync_packages(MeasureGroup &meas) {
       lidar_buffer.pop_front();
 
       if (meas.lidar->points.size() < 1) {
-        cout << "lose lidar" << std::endl;
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "lidar queue empty while doing IMU sync");
         return false;
       }
 
@@ -1411,7 +1411,7 @@ bool PointLio::sync_packages(MeasureGroup &meas) {
     meas.lidar = lidar_buffer.front();
 
     if (meas.lidar->points.size() < 1) {
-      cout << "lose lidar" << endl;
+      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "lidar queue empty");
       lidar_buffer.pop_front();
       time_buffer.pop_front();
       return false;

@@ -5,7 +5,7 @@ class EscalatingFailsafeTest : public mrs_uav_testing::TestGeneric {
 public:
   bool test();
 
-  EscalatingFailsafeTest() : mrs_uav_testing::TestGeneric() {};
+  EscalatingFailsafeTest() : mrs_uav_testing::TestGeneric(){};
 
   virtual std::optional<std::tuple<bool, std::string>> escalatingFailsafe() = 0;
 
@@ -141,7 +141,7 @@ bool EscalatingFailsafeTest::test() {
 
   // | -------------------- wait few seconds -------------------- |
 
-  sleep(1.5);
+  sleep(2.0);
 
   // | ---------------- check if we are elanding ---------------- |
 
@@ -189,7 +189,7 @@ bool EscalatingFailsafeTest::test() {
 
   // | ------------ wait for the failsafe to trigger ------------ |
 
-  sleep(1.5);
+  sleep(2.0);
 
   if (!(!uh_->isFlyingNormally() && uh_->getActiveController() == "FailsafeController" && uav_state->velocity.linear.z < -0.3)) {
     RCLCPP_ERROR(node_->get_logger(), "we are not in failsafe");

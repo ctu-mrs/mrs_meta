@@ -57,7 +57,7 @@
       - local_position
       - manual_control
       # - param
-      # - rc_io
+      - rc_io
       - setpoint_accel
       - setpoint_attitude
       - setpoint_position

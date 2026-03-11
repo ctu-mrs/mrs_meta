@@ -3,3 +3,9 @@
     <description>PointLIO state estimator</description>
   </class>
 </library>
+
+<library path="MrsPointLioEstimator_Estimator2">
+  <class type="mrs_point_lio_estimator_plugin::Estimator2" base_class_type="mrs_uav_managers::StateEstimator">
+    <description>PointLIO state estimator</description>
+  </class>
+</library>

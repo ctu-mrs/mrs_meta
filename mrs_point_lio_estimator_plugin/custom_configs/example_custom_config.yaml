@@ -243,19 +243,24 @@ mrs_uav_managers:
 
     point_lio:
       odom_topic: "odom" # name of the topic (expects nav_msgs/Odometry topic type)
+
       tf_from_attitude: # used for transforming velocities before full transform is available
         enabled: true
         attitude_topic: "attitude" # name of the attitude topic(expects geometry_msgs/QuaternionStamped topic type)
+
       namespace: "estimation_manager/point_lio" # the namespace of the topic (usually the node that publishes the topic)
       utm_based: false # if true, will publish tf to utm_origin
       inverted: true # publish as inverted tf (the default for inverted mrs tf tree convention)
       republish_in_frames: [] # the odometry message will be transformed and republished in the specified frames
+
       custom_frame_id:
         enabled: false
+
       custom_child_frame_id:
         enabled: false
 
     mapping_origin_tf:
+
       odom_topic: "" # name of the topic (expects nav_msgs/Odometry topic type)
       enabled: true
       debug_prints: false
@@ -264,12 +269,16 @@ mrs_uav_managers:
       orientation_topic: "hw_api/orientation" # name of the topic  used for orientation components of the tf (expects geometry_msgs/Quaternion topic type)
       inverted: true # publish as inverted tf (the default for inverted mrs tf tree convention)
       namespace: "" # the namespace of the topic (usually the node that publishes the topic)
+
       custom_frame_id:
         enabled: true
         frame_id: "mapping_origin"
+
       custom_child_frame_id:
         enabled: false
+
       tf_from_attitude: # used for transforming velocities before full transform is available
         enabled: false
+
       republish_in_frames: [] # the odometry message will be transformed and republished in the specified frames
       utm_based: false # if true, will publish tf to utm_origin

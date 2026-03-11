@@ -10,8 +10,20 @@
 #include <string>
 #include <future>
 
+#include <mrs_lib/coro/internal/thread_local_continuation_scheduler.hpp>
+#include <mrs_lib/coro/task.hpp>
+
 namespace mrs_lib
 {
+  template <class ServiceType>
+  class ServiceClientHandler;
+
+  namespace internal
+  {
+    template <typename ServiceType>
+      requires(rosidl_generator_traits::is_service<ServiceType>::value)
+    class [[nodiscard("This service call is only performed when `co_await`ed.")]] ServiceAwaitable;
+  }
 
   /* class ServiceClientHandler //{ */
 
@@ -19,10 +31,10 @@ namespace mrs_lib
    * @brief user wrapper of the service client handler implementation
    */
   template <class ServiceType>
-  class ServiceClientHandler {
+  class ServiceClientHandler
+  {
 
   public:
-
     /**
      * @brief The main constructor with all the options.
      *
@@ -54,7 +66,8 @@ namespace mrs_lib
      * @param qos QOS         Communication quality of service profile.
      * @param callback_group  Callback group used internally by the node for the response callback. Set to nullptr to use the default one.
      */
-    ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos, const rclcpp::CallbackGroup::SharedPtr& callback_group);
+    ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos,
+                         const rclcpp::CallbackGroup::SharedPtr& callback_group);
 
     /**
      * @brief A convenience constructor.
@@ -91,6 +104,50 @@ namespace mrs_lib
      */
     std::optional<std::shared_future<std::shared_ptr<typename ServiceType::Response>>> callAsync(const std::shared_ptr<typename ServiceType::Request>& request);
 
+    /**
+     * @brief Awaitable call of the service.
+     *
+     * This function can be used inside coroutine callbacks (mrs_lib::Task) to
+     * suspend the coroutine until the service completes. The advantage of this
+     * method compared to callSync is that this can run on single threaded
+     * executor - the calling coroutine is suspended and the executor can work
+     * on other tasks. Once the service responds, the calling coroutine is
+     * resumed and the co_await expression returns
+     * `std::optional<std::shared_ptr<Response>>` where `Response` is the
+     * service response type.
+     *
+     * @param request The service request to be sent with the call
+     *
+     * @return Awaitable type that calls the service and returns the result when awaited.
+     */
+    Task<std::optional<std::shared_ptr<typename ServiceType::Response>>> callAwaitable(std::shared_ptr<typename ServiceType::Request> request);
+
+    /**
+     * @brief Returns the name of the service this client connects to.
+     *
+     * @return service name, or an empty string if the handler is not initialized
+     */
+    std::string getServiceName() const;
+
+    /**
+     * @brief Waits for the service to be available.
+     *
+     * @tparam RepT   arithmetic type representing the number of ticks (deduced automatically)
+     * @tparam RatioT std::ratio representing the tick period (deduced automatically)
+     * @param timeout maximum time to wait for the service to be available
+     *
+     * @return true if the service became available within the timeout, false otherwise
+     */
+    template <typename RepT = int64_t, typename RatioT = std::milli>
+    bool waitForService(std::chrono::duration<RepT, RatioT> timeout = std::chrono::seconds(1));
+
+    /**
+     * @brief Checks if the service is available.
+     *
+     * @return true if the service is available, false otherwise
+     */
+    bool isServiceReady() const;
+
   private:
     class Impl;
     std::shared_ptr<Impl> impl_;
@@ -98,6 +155,6 @@ namespace mrs_lib
 
   //}
 
-}  // namespace mrs_lib
+} // namespace mrs_lib
 
 #include <mrs_lib/impl/service_client_handler.hpp>

@@ -12,6 +12,7 @@
 #include <mrs_msgs/msg/obstacle_sectors.hpp>
 #include <mrs_msgs/msg/bool_stamped.hpp>
 #include <mrs_msgs/msg/control_manager_diagnostics.hpp>
+#include <mrs_msgs/msg/safety_area_manager_diagnostics.hpp>
 #include <mrs_msgs/msg/dynamics_constraints.hpp>
 #include <mrs_msgs/msg/control_error.hpp>
 #include <mrs_msgs/msg/tracker_command.hpp>
@@ -84,6 +85,9 @@
 
 #include <mrs_msgs/srv/reference_stamped_srv.hpp>
 #include <mrs_msgs/srv/velocity_reference_stamped_srv.hpp>
+#include <mrs_msgs/srv/validate_path_to_point_srv.hpp>
+#include <mrs_msgs/srv/get_reference_stamped_srv.hpp>
+#include <mrs_msgs/srv/get_bool_srv.hpp>
 #include <mrs_msgs/srv/transform_reference_srv.hpp>
 #include <mrs_msgs/srv/transform_reference_array_srv.hpp>
 #include <mrs_msgs/srv/transform_pose_srv.hpp>
@@ -420,8 +424,6 @@ private:
   mrs_lib::PublisherHandler<std_msgs::msg::Float64>                   ph_throttle_;
   mrs_lib::PublisherHandler<std_msgs::msg::Float64>                   ph_thrust_;
   mrs_lib::PublisherHandler<mrs_msgs::msg::ControlError>              ph_control_error_;
-  mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray>     ph_safety_area_markers_;
-  mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray>     ph_safety_area_coordinates_markers_;
   mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray>     ph_disturbances_markers_;
   mrs_lib::PublisherHandler<mrs_msgs::msg::DynamicsConstraints>       ph_current_constraints_;
   mrs_lib::PublisherHandler<mrs_msgs::msg::Float64Stamped>            ph_heading_;
@@ -447,7 +449,6 @@ private:
   mrs_lib::ServiceServerHandler<mrs_msgs::srv::ReferenceStampedSrv>    ss_emergency_reference_;
   mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>                ss_pirouette_;
   mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>                ss_parachute_;
-  mrs_lib::ServiceServerHandler<mrs_msgs::srv::Float64StampedSrv>      ss_set_min_z_;
 
   // human callbable services for references
   mrs_lib::ServiceServerHandler<mrs_msgs::srv::Vec4> ss_goto_;
@@ -489,11 +490,18 @@ private:
   mrs_lib::ServiceServerHandler<std_srvs::srv::SetBool> ss_bumper_enabler_;
 
   // service clients
-  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool> sch_arming_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger> sch_eland_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger> sch_shutdown_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool> sch_set_odometry_callbacks_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger> sch_parachute_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>                sch_arming_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                sch_eland_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                sch_shutdown_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>                sch_set_odometry_callbacks_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>                sch_parachute_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv>    sch_point_in_safety_area_2d_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv>    sch_point_in_safety_area_3d_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidatePathToPointSrv> sch_path_to_point_in_safety_area_2d_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidatePathToPointSrv> sch_path_to_point_in_safety_area_3d_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetReferenceStampedSrv> sch_get_max_z_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetReferenceStampedSrv> sch_get_min_z_;
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetBoolSrv>             sch_is_safety_area_enabled_;
 
   // safety area min z servers
   mrs_lib::ServiceServerHandler<mrs_msgs::srv::GetFloat64> ss_get_min_z_;
@@ -560,6 +568,10 @@ private:
   bool   _odometry_innovation_check_enabled_ = false;
   double _odometry_innovation_threshold_     = 0; // innovation size for triggering eland
 
+  bool   _hover_throttle_range_check_enabled_ = false;
+  double _hover_throttle_range_check_min_;
+  double _hover_throttle_range_check_max_;
+
   std::atomic<bool> callbacks_enabled_ = true;
 
   // | ------------------------ parachute ----------------------- |
@@ -569,21 +581,9 @@ private:
   std::tuple<bool, std::string> deployParachute(void);
   bool                          parachuteSrv(void);
 
-  // | ----------------------- safety area ---------------------- |
-
-  // safety area
-  std::unique_ptr<mrs_lib::safety_zone::SafetyZone> safety_zone_;
-
-  std::atomic<bool> use_safety_area_ = false;
-
-  std::string _safety_area_horizontal_frame_;
-  std::string _safety_area_vertical_frame_;
-
-  std::atomic<double> _safety_area_min_z_ = 0;
-
-  double _safety_area_max_z_ = 0;
-
   // safety area routines
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics> sh_safety_area_diag_;
+
   // those are passed to trackers using the common_handlers object
   bool   isPointInSafetyArea2d(const mrs_msgs::msg::ReferenceStamped &point);
   bool   isPointInSafetyArea3d(const mrs_msgs::msg::ReferenceStamped &point);
@@ -645,14 +645,11 @@ private:
                                   const std::shared_ptr<std_srvs::srv::Trigger::Response> response);
   bool callbackEland(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, const std::shared_ptr<std_srvs::srv::Trigger::Response> response);
   bool callbackParachute(const std::shared_ptr<std_srvs::srv::Trigger::Request> request, const std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-  bool callbackSetMinZ(const std::shared_ptr<mrs_msgs::srv::Float64StampedSrv::Request>  request,
-                       const std::shared_ptr<mrs_msgs::srv::Float64StampedSrv::Response> response);
   bool callbackToggleOutput(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, const std::shared_ptr<std_srvs::srv::SetBool::Response> response);
   bool callbackArm(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, const std::shared_ptr<std_srvs::srv::SetBool::Response> response);
   bool callbackEnableCallbacks(const std::shared_ptr<std_srvs::srv::SetBool::Request>  request,
                                const std::shared_ptr<std_srvs::srv::SetBool::Response> response);
   bool callbackEnableBumper(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, const std::shared_ptr<std_srvs::srv::SetBool::Response> response);
-  bool callbackUseSafetyArea(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, const std::shared_ptr<std_srvs::srv::SetBool::Response> response);
 
   bool callbackGetMinZ(const std::shared_ptr<mrs_msgs::srv::GetFloat64::Request> request, const std::shared_ptr<mrs_msgs::srv::GetFloat64::Response> response);
 
@@ -827,7 +824,8 @@ private:
 
   std::shared_ptr<TimerType> timer_joystick_;
   void                       timerJoystick();
-  double                     _joystick_timer_rate_ = 0;
+  double                     _joystick_timer_rate_   = 0;
+  std::atomic<bool>          running_timer_joystick_ = false;
 
   double _joystick_carrot_distance_ = 0;
 
@@ -980,26 +978,66 @@ void ControlManager::initialize(void) {
   param_loader_->loadParam("network_config", _network_config_);
 
   if (_custom_config_ != "") {
-    param_loader_->addYamlFile(_custom_config_);
+    if (!param_loader_->addYamlFile(_custom_config_)) {
+      RCLCPP_ERROR(node_->get_logger(), "failed to load custom_config");
+      rclcpp::shutdown();
+      exit(1);
+    }
   }
 
   if (_platform_config_ != "") {
-    param_loader_->addYamlFile(_platform_config_);
+    if (!param_loader_->addYamlFile(_platform_config_)) {
+      RCLCPP_ERROR(node_->get_logger(), "failed to load platform_config");
+      rclcpp::shutdown();
+      exit(1);
+    }
   }
 
   if (_world_config_ != "") {
-    param_loader_->addYamlFile(_world_config_);
+    if (!param_loader_->addYamlFile(_world_config_)) {
+      RCLCPP_ERROR(node_->get_logger(), "failed to load world_config");
+      rclcpp::shutdown();
+      exit(1);
+    }
   }
 
   if (_network_config_ != "") {
-    param_loader_->addYamlFile(_network_config_);
+    if (!param_loader_->addYamlFile(_network_config_)) {
+      RCLCPP_ERROR(node_->get_logger(), "failed to load network_config");
+      rclcpp::shutdown();
+      exit(1);
+    }
   }
 
-  param_loader_->addYamlFileFromParam("private_config");
-  param_loader_->addYamlFileFromParam("public_config");
-  param_loader_->addYamlFileFromParam("private_trackers");
-  param_loader_->addYamlFileFromParam("private_controllers");
-  param_loader_->addYamlFileFromParam("public_controllers");
+  if (!param_loader_->addYamlFileFromParam("private_config")) {
+    RCLCPP_ERROR(node_->get_logger(), "failed to load private_config");
+    rclcpp::shutdown();
+    exit(1);
+  }
+
+  if (!param_loader_->addYamlFileFromParam("public_config")) {
+    RCLCPP_ERROR(node_->get_logger(), "failed to load public_config");
+    rclcpp::shutdown();
+    exit(1);
+  }
+
+  if (!param_loader_->addYamlFileFromParam("private_trackers")) {
+    RCLCPP_ERROR(node_->get_logger(), "failed to load private_trackers");
+    rclcpp::shutdown();
+    exit(1);
+  }
+
+  if (!param_loader_->addYamlFileFromParam("private_controllers")) {
+    RCLCPP_ERROR(node_->get_logger(), "failed to load private_controllers");
+    rclcpp::shutdown();
+    exit(1);
+  }
+
+  if (!param_loader_->addYamlFileFromParam("public_controllers")) {
+    RCLCPP_ERROR(node_->get_logger(), "failed to load public_controllers");
+    rclcpp::shutdown();
+    exit(1);
+  }
 
   // params passed from the launch file are not prefixed
   param_loader_->loadParam("uav_name", _uav_name_);
@@ -1022,50 +1060,6 @@ void ControlManager::initialize(void) {
   param_loader_->loadParam("motor_params/b", common_handlers_->throttle_model.B);
   param_loader_->loadParam("motor_params/n_motors", common_handlers_->throttle_model.n_motors);
 
-  // | ----------------------- safety area ---------------------- |
-
-  bool use_safety_area;
-  param_loader_->loadParam("safety_area/enabled", use_safety_area);
-  use_safety_area_ = use_safety_area;
-
-  param_loader_->loadParam("safety_area/horizontal/frame_name", _safety_area_horizontal_frame_);
-
-  param_loader_->loadParam("safety_area/vertical/frame_name", _safety_area_vertical_frame_);
-  param_loader_->loadParam("safety_area/vertical/max_z", _safety_area_max_z_);
-
-  {
-    double temp;
-    param_loader_->loadParam("safety_area/vertical/min_z", temp);
-
-    _safety_area_min_z_ = temp;
-  }
-
-  if (use_safety_area_) {
-
-    Eigen::MatrixXd border_points = param_loader_->loadMatrixDynamic2("safety_area/horizontal/points", -1, 2);
-
-    try {
-
-      std::vector<Eigen::MatrixXd> polygon_obstacle_points;
-      std::vector<Eigen::MatrixXd> point_obstacle_points;
-
-      safety_zone_ = std::make_unique<mrs_lib::safety_zone::SafetyZone>(border_points);
-    }
-
-    catch (mrs_lib::safety_zone::BorderError &e) {
-      RCLCPP_ERROR(node_->get_logger(), "SafetyArea: wrong configruation for the safety zone border polygon");
-      rclcpp::shutdown();
-      exit(1);
-    }
-    catch (...) {
-      RCLCPP_ERROR(node_->get_logger(), "SafetyArea: unhandled exception!");
-      rclcpp::shutdown();
-      exit(1);
-    }
-
-    RCLCPP_INFO(node_->get_logger(), "safety area initialized");
-  }
-
   param_loader_->setPrefix("mrs_uav_managers/control_manager/");
 
   param_loader_->loadParam("state_input", _state_input_);
@@ -1079,6 +1073,10 @@ void ControlManager::initialize(void) {
   param_loader_->loadParam("safety/min_throttle_null_tracker", _min_throttle_null_tracker_);
   param_loader_->loadParam("safety/ehover_tracker", _ehover_tracker_name_);
   param_loader_->loadParam("safety/failsafe_controller", _failsafe_controller_name_);
+
+  param_loader_->loadParam("safety/hover_throttle_range_check/enabled", _hover_throttle_range_check_enabled_);
+  param_loader_->loadParam("safety/hover_throttle_range_check/min", _hover_throttle_range_check_min_);
+  param_loader_->loadParam("safety/hover_throttle_range_check/max", _hover_throttle_range_check_max_);
 
   param_loader_->loadParam("safety/eland/controller", _eland_controller_name_);
   param_loader_->loadParam("safety/eland/cutoff_mass_factor", _elanding_cutoff_mass_factor_);
@@ -1284,7 +1282,6 @@ void ControlManager::initialize(void) {
   common_handlers_->scope_timer.enabled = scope_timer_enabled_;
   common_handlers_->scope_timer.logger  = scope_timer_logger_;
 
-  common_handlers_->safety_area.use_safety_area       = use_safety_area_;
   common_handlers_->safety_area.isPointInSafetyArea2d = std::bind(&ControlManager::isPointInSafetyArea2d, this, std::placeholders::_1);
   common_handlers_->safety_area.isPointInSafetyArea3d = std::bind(&ControlManager::isPointInSafetyArea3d, this, std::placeholders::_1);
   common_handlers_->safety_area.getMinZ               = std::bind(&ControlManager::getMinZ, this, std::placeholders::_1);
@@ -1329,7 +1326,7 @@ void ControlManager::initialize(void) {
 
     param_loader_->loadParam(tracker_name + "/address", address);
     param_loader_->loadParam(tracker_name + "/namespace", name_space);
-    param_loader_->loadParam(tracker_name + "/human_switchable", human_switchable, false);
+    param_loader_->loadParam(tracker_name + "/human_switchable", human_switchable);
 
     TrackerParams new_tracker(address, name_space, human_switchable);
     trackers_.insert(std::pair<std::string, TrackerParams>(tracker_name, new_tracker));
@@ -1490,6 +1487,12 @@ void ControlManager::initialize(void) {
   param_loader_->loadParam("mrs_controllers", _controller_names_);
   param_loader_->loadParam("controllers", custom_controllers);
 
+  if (!param_loader_->loadedSuccessfully()) {
+    RCLCPP_ERROR(node_->get_logger(), "could not load all parameters!");
+    rclcpp::shutdown();
+    exit(1);
+  }
+
   if (!custom_controllers.empty()) {
     _controller_names_.insert(_controller_names_.end(), custom_controllers.begin(), custom_controllers.end());
   }
@@ -1511,7 +1514,13 @@ void ControlManager::initialize(void) {
     param_loader_->loadParam(controller_name + "/eland_threshold", eland_threshold);
     param_loader_->loadParam(controller_name + "/failsafe_threshold", failsafe_threshold);
     param_loader_->loadParam(controller_name + "/odometry_innovation_threshold", odometry_innovation_threshold);
-    param_loader_->loadParam(controller_name + "/human_switchable", human_switchable, false);
+    param_loader_->loadParam(controller_name + "/human_switchable", human_switchable);
+
+    if (!param_loader_->loadedSuccessfully()) {
+      RCLCPP_ERROR(node_->get_logger(), "could not load all parameters!");
+      rclcpp::shutdown();
+      exit(1);
+    }
 
     // check if the controller can output some of the required outputs
     {
@@ -1837,26 +1846,6 @@ void ControlManager::initialize(void) {
     mrs_lib::PublisherHandlerOptions opts;
 
     opts.node          = node_;
-    opts.throttle_rate = 1.0;
-    // TODO latch
-
-    ph_safety_area_markers_ = mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray>(opts, "~/safety_area_markers_out");
-  }
-
-  {
-    mrs_lib::PublisherHandlerOptions opts;
-
-    opts.node          = node_;
-    opts.throttle_rate = 1.0;
-    // TODO latch
-
-    ph_safety_area_coordinates_markers_ = mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray>(opts, "~/safety_area_coordinates_markers_out");
-  }
-
-  {
-    mrs_lib::PublisherHandlerOptions opts;
-
-    opts.node          = node_;
     opts.throttle_rate = 10.0;
 
     ph_disturbances_markers_ = mrs_lib::PublisherHandler<visualization_msgs::msg::MarkerArray>(opts, "~/disturbances_markers_out");
@@ -1887,6 +1876,29 @@ void ControlManager::initialize(void) {
     ph_mass_nominal_.publish(nominal_mass);
   }
 
+  // | ------- check the hover throttle agains the limits ------- |
+
+  if (_hover_throttle_range_check_enabled_) {
+
+    double hover_throttle = mrs_lib::quadratic_throttle_model::forceToThrottle(common_handlers_->throttle_model, _uav_mass_ * common_handlers_->g);
+
+    if (!std::isfinite(hover_throttle)) {
+      RCLCPP_ERROR(node_->get_logger(), "NaN detected in variable \"hover_throttle\"!!!");
+      rclcpp::shutdown();
+      exit(1);
+    }
+
+    if (hover_throttle < _hover_throttle_range_check_min_ || hover_throttle > _hover_throttle_range_check_max_) {
+      RCLCPP_ERROR(node_->get_logger(), "hover_throttle (%.2f) is outside of the allowed range (%.2f < allowed < %.2f)!", hover_throttle,
+                   _hover_throttle_range_check_min_, _hover_throttle_range_check_max_);
+      RCLCPP_ERROR(node_->get_logger(),
+                   "... this is possibly caused by wrong motor constants (wrong platform_config.yaml, wrong UAV_TYPE), or poorly set initial UAV_MASS.");
+      RCLCPP_ERROR(node_->get_logger(), "... shutting down the system to prevent a crash.");
+      rclcpp::shutdown();
+      exit(1);
+    }
+  }
+
   // | ----------------------- subscribers ---------------------- |
 
   mrs_lib::SubscriberHandlerOptions shopts;
@@ -1907,11 +1919,12 @@ void ControlManager::initialize(void) {
     sh_odometry_innovation_ = mrs_lib::SubscriberHandler<nav_msgs::msg::Odometry>(shopts, "~/odometry_innovation_in");
   }
 
-  sh_bumper_    = mrs_lib::SubscriberHandler<mrs_msgs::msg::ObstacleSectors>(shopts, "~/bumper_sectors_in");
-  sh_max_z_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::Float64Stamped>(shopts, "~/max_z_in");
-  sh_joystick_  = mrs_lib::SubscriberHandler<sensor_msgs::msg::Joy>(shopts, "~/joystick_in", &ControlManager::callbackJoystick, this);
-  sh_gnss_      = mrs_lib::SubscriberHandler<sensor_msgs::msg::NavSatFix>(shopts, "~/gnss_in", &ControlManager::callbackGNSS, this);
-  sh_hw_api_rc_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiRcChannels>(shopts, "~/hw_api_rc_in", &ControlManager::callbackRC, this);
+  sh_bumper_           = mrs_lib::SubscriberHandler<mrs_msgs::msg::ObstacleSectors>(shopts, "~/bumper_sectors_in");
+  sh_max_z_            = mrs_lib::SubscriberHandler<mrs_msgs::msg::Float64Stamped>(shopts, "~/max_z_in");
+  sh_safety_area_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics>(shopts, "~/safety_area_diag_in");
+  sh_joystick_         = mrs_lib::SubscriberHandler<sensor_msgs::msg::Joy>(shopts, "~/joystick_in", &ControlManager::callbackJoystick, this);
+  sh_gnss_             = mrs_lib::SubscriberHandler<sensor_msgs::msg::NavSatFix>(shopts, "~/gnss_in", &ControlManager::callbackGNSS, this);
+  sh_hw_api_rc_        = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiRcChannels>(shopts, "~/hw_api_rc_in", &ControlManager::callbackRC, this);
 
   sh_hw_api_status_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>(shopts, "~/hw_api_status_in", &ControlManager::callbackHwApiStatus, this);
 
@@ -1952,17 +1965,11 @@ void ControlManager::initialize(void) {
   ss_use_joystick_ = mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>(
       node_, "~/use_joystick_in", std::bind(&ControlManager::callbackUseJoystick, this, std::placeholders::_1, std::placeholders::_2),
       rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
-  ss_use_safety_area_ = mrs_lib::ServiceServerHandler<std_srvs::srv::SetBool>(
-      node_, "~/use_safety_area_in", std::bind(&ControlManager::callbackUseSafetyArea, this, std::placeholders::_1, std::placeholders::_2),
-      rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
   ss_eland_ = mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>(
       node_, "~/eland_in", std::bind(&ControlManager::callbackEland, this, std::placeholders::_1, std::placeholders::_2), rclcpp::SystemDefaultsQoS(),
       cbkgrp_ss_);
   ss_parachute_ = mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>(
       node_, "~/parachute_in", std::bind(&ControlManager::callbackParachute, this, std::placeholders::_1, std::placeholders::_2), rclcpp::SystemDefaultsQoS(),
-      cbkgrp_ss_);
-  ss_set_min_z_ = mrs_lib::ServiceServerHandler<mrs_msgs::srv::Float64StampedSrv>(
-      node_, "~/set_min_z_in", std::bind(&ControlManager::callbackSetMinZ, this, std::placeholders::_1, std::placeholders::_2), rclcpp::SystemDefaultsQoS(),
       cbkgrp_ss_);
   ss_transform_reference_ = mrs_lib::ServiceServerHandler<mrs_msgs::srv::TransformReferenceSrv>(
       node_, "~/transform_reference_in", std::bind(&ControlManager::callbackTransformReference, this, std::placeholders::_1, std::placeholders::_2),
@@ -2005,12 +2012,21 @@ void ControlManager::initialize(void) {
       node_, "~/goto_trajectory_start_in", std::bind(&ControlManager::callbackGotoTrajectoryStart, this, std::placeholders::_1, std::placeholders::_2),
       rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
 
-  sch_arming_                 = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/hw_api_arming_out", cbkgrp_sc_);
-  sch_eland_                  = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/eland_out", cbkgrp_sc_);
-  sch_shutdown_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/shutdown_out", cbkgrp_sc_);
-  sch_set_odometry_callbacks_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/set_odometry_callbacks_out", cbkgrp_sc_);
-  sch_ungrip_                 = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/ungrip_out", cbkgrp_sc_);
-  sch_parachute_              = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/parachute_out", cbkgrp_sc_);
+  sch_arming_                  = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/hw_api_arming_out", cbkgrp_sc_);
+  sch_eland_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/eland_out", cbkgrp_sc_);
+  sch_shutdown_                = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/shutdown_out", cbkgrp_sc_);
+  sch_set_odometry_callbacks_  = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/set_odometry_callbacks_out", cbkgrp_sc_);
+  sch_ungrip_                  = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/ungrip_out", cbkgrp_sc_);
+  sch_parachute_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/parachute_out", cbkgrp_sc_);
+  sch_point_in_safety_area_2d_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv>(node_, "~/point_in_safety_area_2d_out", cbkgrp_sc_);
+  sch_point_in_safety_area_3d_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv>(node_, "~/point_in_safety_area_3d_out", cbkgrp_sc_);
+  sch_path_to_point_in_safety_area_2d_ =
+      mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidatePathToPointSrv>(node_, "~/path_in_safety_area_2d_out", cbkgrp_sc_);
+  sch_path_to_point_in_safety_area_3d_ =
+      mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidatePathToPointSrv>(node_, "~/path_in_safety_area_3d_out", cbkgrp_sc_);
+  sch_get_min_z_              = mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetReferenceStampedSrv>(node_, "~/get_min_z_out", cbkgrp_sc_);
+  sch_get_max_z_              = mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetReferenceStampedSrv>(node_, "~/get_max_z_out", cbkgrp_sc_);
+  sch_is_safety_area_enabled_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::GetBoolSrv>(node_, "~/is_safety_area_enabled_out", cbkgrp_sc_);
 
   // | ---------------- setpoint command services --------------- |
 
@@ -2402,195 +2418,6 @@ void ControlManager::timerStatus() {
     speed_out.value  = speed;
 
     ph_speed_.publish(speed_out);
-  }
-
-  // --------------------------------------------------------------
-  // |               publish the safety area markers              |
-  // --------------------------------------------------------------
-
-  if (use_safety_area_) {
-
-    mrs_msgs::msg::ReferenceStamped temp_ref;
-    temp_ref.header.frame_id = _safety_area_horizontal_frame_;
-
-    geometry_msgs::msg::TransformStamped tf;
-
-    auto ret = transformer_->getTransform(_safety_area_horizontal_frame_, "local_origin", clock_->now());
-
-    if (ret) {
-
-      RCLCPP_INFO_ONCE(node_->get_logger(), "got TFs, publishing safety area markers");
-
-      visualization_msgs::msg::MarkerArray safety_area_marker_array;
-      visualization_msgs::msg::MarkerArray safety_area_coordinates_marker_array;
-
-      mrs_lib::safety_zone::Polygon border = safety_zone_->getBorder();
-
-      std::vector<geometry_msgs::msg::Point> border_points_bot_original = border.getPointMessageVector(getMinZ(_safety_area_horizontal_frame_));
-      std::vector<geometry_msgs::msg::Point> border_points_top_original = border.getPointMessageVector(getMaxZ(_safety_area_horizontal_frame_));
-
-      std::vector<geometry_msgs::msg::Point> border_points_bot_transformed = border_points_bot_original;
-      std::vector<geometry_msgs::msg::Point> border_points_top_transformed = border_points_bot_original;
-
-      // if we fail in transforming the area at some point
-      // do not publish it at all
-      bool tf_success = true;
-
-      geometry_msgs::msg::TransformStamped tf = ret.value();
-
-      /* transform area points to local origin //{ */
-
-      // transform border bottom points to local origin
-      for (size_t i = 0; i < border_points_bot_original.size(); i++) {
-
-        temp_ref.header.frame_id      = _safety_area_horizontal_frame_;
-        temp_ref.header.stamp         = clock_->now();
-        temp_ref.reference.position.x = border_points_bot_original.at(i).x;
-        temp_ref.reference.position.y = border_points_bot_original.at(i).y;
-        temp_ref.reference.position.z = border_points_bot_original.at(i).z;
-
-        if (auto ret = transformer_->transform(temp_ref, tf)) {
-
-          temp_ref = ret.value();
-
-          border_points_bot_transformed.at(i).x = temp_ref.reference.position.x;
-          border_points_bot_transformed.at(i).y = temp_ref.reference.position.y;
-          border_points_bot_transformed.at(i).z = temp_ref.reference.position.z;
-
-        } else {
-          tf_success = false;
-        }
-      }
-
-      // transform border top points to local origin
-      for (size_t i = 0; i < border_points_top_original.size(); i++) {
-
-        temp_ref.header.frame_id      = _safety_area_horizontal_frame_;
-        temp_ref.header.stamp         = clock_->now();
-        temp_ref.reference.position.x = border_points_top_original.at(i).x;
-        temp_ref.reference.position.y = border_points_top_original.at(i).y;
-        temp_ref.reference.position.z = border_points_top_original.at(i).z;
-
-        if (auto ret = transformer_->transform(temp_ref, tf)) {
-
-          temp_ref = ret.value();
-
-          border_points_top_transformed.at(i).x = temp_ref.reference.position.x;
-          border_points_top_transformed.at(i).y = temp_ref.reference.position.y;
-          border_points_top_transformed.at(i).z = temp_ref.reference.position.z;
-
-        } else {
-          tf_success = false;
-        }
-      }
-
-      //}
-
-      visualization_msgs::msg::Marker safety_area_marker;
-
-      safety_area_marker.header.frame_id = _uav_name_ + "/local_origin";
-      safety_area_marker.header.stamp    = clock_->now();
-      safety_area_marker.type            = visualization_msgs::msg::Marker::LINE_LIST;
-      safety_area_marker.color.a         = 0.15;
-      safety_area_marker.scale.x         = 0.2;
-      safety_area_marker.color.r         = 1;
-      safety_area_marker.color.g         = 0;
-      safety_area_marker.color.b         = 0;
-
-      safety_area_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
-
-      visualization_msgs::msg::Marker safety_area_coordinates_marker;
-
-      safety_area_coordinates_marker.header.frame_id = _uav_name_ + "/local_origin";
-      safety_area_coordinates_marker.header.stamp    = clock_->now();
-      safety_area_coordinates_marker.type            = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-      safety_area_coordinates_marker.color.a         = 1;
-      safety_area_coordinates_marker.scale.z         = 1.0;
-      safety_area_coordinates_marker.color.r         = 0;
-      safety_area_coordinates_marker.color.g         = 0;
-      safety_area_coordinates_marker.color.b         = 0;
-
-      safety_area_coordinates_marker.id = 0;
-
-      safety_area_coordinates_marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
-
-      /* adding safety area points //{ */
-
-      // bottom border
-      for (size_t i = 0; i < border_points_bot_transformed.size(); i++) {
-
-        safety_area_marker.points.push_back(border_points_bot_transformed.at(i));
-        safety_area_marker.points.push_back(border_points_bot_transformed.at((i + 1) % border_points_bot_transformed.size()));
-
-        std::stringstream ss;
-
-        if (_safety_area_horizontal_frame_ == "latlon_origin") {
-          ss << "idx: " << i << std::endl
-             << std::setprecision(6) << std::fixed << "lat: " << border_points_bot_original.at(i).x << std::endl
-             << "lon: " << border_points_bot_original.at(i).y;
-        } else {
-          ss << "idx: " << i << std::endl
-             << std::setprecision(1) << std::fixed << "x: " << border_points_bot_original.at(i).x << std::endl
-             << "y: " << border_points_bot_original.at(i).y;
-        }
-
-        safety_area_coordinates_marker.color.r = 0;
-        safety_area_coordinates_marker.color.g = 0;
-        safety_area_coordinates_marker.color.b = 0;
-
-        safety_area_coordinates_marker.pose.position = border_points_bot_transformed.at(i);
-        safety_area_coordinates_marker.text          = ss.str();
-        safety_area_coordinates_marker.id++;
-
-        safety_area_coordinates_marker_array.markers.push_back(safety_area_coordinates_marker);
-      }
-
-      // top border + top/bot edges
-      for (size_t i = 0; i < border_points_top_transformed.size(); i++) {
-
-        safety_area_marker.points.push_back(border_points_top_transformed.at(i));
-        safety_area_marker.points.push_back(border_points_top_transformed.at((i + 1) % border_points_top_transformed.size()));
-
-        safety_area_marker.points.push_back(border_points_bot_transformed.at(i));
-        safety_area_marker.points.push_back(border_points_top_transformed.at(i));
-
-        std::stringstream ss;
-
-        if (_safety_area_horizontal_frame_ == "latlon_origin") {
-          ss << "idx: " << i << std::endl
-             << std::setprecision(6) << std::fixed << "lat: " << border_points_bot_original.at(i).x << std::endl
-             << "lon: " << border_points_bot_original.at(i).y;
-        } else {
-          ss << "idx: " << i << std::endl
-             << std::setprecision(1) << std::fixed << "x: " << border_points_bot_original.at(i).x << std::endl
-             << "y: " << border_points_bot_original.at(i).y;
-        }
-
-        safety_area_coordinates_marker.color.r = 1;
-        safety_area_coordinates_marker.color.g = 1;
-        safety_area_coordinates_marker.color.b = 1;
-
-        safety_area_coordinates_marker.pose.position = border_points_top_transformed.at(i);
-        safety_area_coordinates_marker.text          = ss.str();
-        safety_area_coordinates_marker.id++;
-
-        safety_area_coordinates_marker_array.markers.push_back(safety_area_coordinates_marker);
-      }
-
-      //}
-
-      if (tf_success) {
-
-        safety_area_marker_array.markers.push_back(safety_area_marker);
-
-        ph_safety_area_markers_.publish(safety_area_marker_array);
-
-        ph_safety_area_coordinates_markers_.publish(safety_area_coordinates_marker_array);
-      }
-
-    } else {
-      RCLCPP_WARN_ONCE(node_->get_logger(), "missing TFs, can not publish safety area markers");
-    }
   }
 
   // --------------------------------------------------------------
@@ -3328,6 +3155,8 @@ void ControlManager::timerFailsafe() {
 
 void ControlManager::timerJoystick() {
 
+  mrs_lib::AtomicScopeFlag unset_running(running_timer_joystick_);
+
   if (!is_initialized_) {
     return;
   }
@@ -3561,9 +3390,11 @@ void ControlManager::timerBumper() {
     return;
   }
 
+  // bumper should be only active when flying normally
   if (!isFlyingNormally()) {
-    if (!(bumper_repulsing_ || rc_goto_active_)) {
-      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "bumpper can not function, not flying 'normally'");
+
+    if (!bumper_repulsing_) {
+      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "bumper can not function, not flying 'normally'");
       return;
     }
   }
@@ -4355,6 +4186,14 @@ void ControlManager::callbackRC(const mrs_msgs::msg::HwApiRcChannels::ConstShare
       // rc control deactivation
       if (rc_goto_active_ && channel_low) {
 
+        for (int i = 0; i < 10; i++) {
+          if (!running_timer_joystick_) {
+            break;
+          } else {
+            clock_->sleep_for(0.01s);
+          }
+        }
+
         RCLCPP_INFO(node_->get_logger(), "deactivating RC joystick");
 
         callbacks_enabled_ = true;
@@ -4726,45 +4565,6 @@ bool ControlManager::callbackParachute([[maybe_unused]] const std::shared_ptr<st
 
 //}
 
-/* //{ callbackSetMinZ() */
-
-bool ControlManager::callbackSetMinZ(const std::shared_ptr<mrs_msgs::srv::Float64StampedSrv::Request>  request,
-                                     const std::shared_ptr<mrs_msgs::srv::Float64StampedSrv::Response> response) {
-
-  if (!is_initialized_) {
-    return false;
-  }
-
-  if (!use_safety_area_) {
-    response->success = true;
-    response->message = "safety area is disabled";
-    return true;
-  }
-
-  // | -------- transform min_z to the safety area frame -------- |
-
-  mrs_msgs::msg::ReferenceStamped point;
-  point.header               = request->header;
-  point.reference.position.z = request->value;
-
-  auto result = transformer_->transformSingle(point, _safety_area_vertical_frame_);
-
-  if (result) {
-
-    _safety_area_min_z_ = result.value().reference.position.z;
-
-    response->success = true;
-    response->message = "safety area's min z updated";
-
-  } else {
-
-    response->success = false;
-    response->message = "could not transform the value to safety area's vertical frame";
-  }
-
-  return true;
-}
-
 //}
 
 /* //{ callbackToggleOutput() */
@@ -4786,14 +4586,11 @@ bool ControlManager::callbackToggleOutput(const std::shared_ptr<std_srvs::srv::S
   bool prereq_check = true;
 
   {
-    mrs_msgs::msg::ReferenceStamped current_coord;
-    current_coord.header.frame_id      = uav_state.header.frame_id;
-    current_coord.reference.position.x = uav_state.pose.position.x;
-    current_coord.reference.position.y = uav_state.pose.position.y;
-
-    if (!isPointInSafetyArea2d(current_coord)) {
-      ss << "cannot toggle output, the UAV is outside of the safety area!";
-      prereq_check = false;
+    if (sh_safety_area_diag_.hasMsg()) {
+      if (!sh_safety_area_diag_.getMsg()->position_valid_2d) {
+        ss << "cannot toggle output, the UAV is outside of the safety area!";
+        prereq_check = false;
+      }
     }
   }
 
@@ -5402,31 +5199,6 @@ bool ControlManager::callbackEnableBumper(const std::shared_ptr<std_srvs::srv::S
   std::stringstream ss;
 
   ss << "bumper " << (bumper_enabled_ ? "enalbed" : "disabled");
-
-  RCLCPP_INFO_STREAM(node_->get_logger(), "" << ss.str());
-
-  response->success = true;
-  response->message = ss.str();
-
-  return true;
-}
-
-//}
-
-/* //{ callbackUseSafetyArea() */
-
-bool ControlManager::callbackUseSafetyArea(const std::shared_ptr<std_srvs::srv::SetBool::Request>  request,
-                                           const std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
-
-  if (!is_initialized_) {
-    return false;
-  }
-
-  use_safety_area_ = request->data;
-
-  std::stringstream ss;
-
-  ss << "safety area " << (use_safety_area_ ? "enabled" : "disabled");
 
   RCLCPP_INFO_STREAM(node_->get_logger(), "" << ss.str());
 
@@ -6401,261 +6173,267 @@ ControlManager::setTrajectoryReference(const mrs_msgs::msg::TrajectoryReference 
 
   /* safety area check //{ */
 
-  if (use_safety_area_) {
+  if (sh_safety_area_diag_.hasMsg()) {
+    auto msg = sh_safety_area_diag_.getMsg();
 
-    int last_valid_idx    = 0;
-    int first_invalid_idx = -1;
+    if (msg->safety_area_enabled) {
 
-    double min_z = getMinZ(processed_trajectory.header.frame_id);
-    double max_z = getMaxZ(processed_trajectory.header.frame_id);
+      int last_valid_idx    = 0;
+      int first_invalid_idx = -1;
 
-    for (int i = 0; i < trajectory_size; i++) {
+      double min_z = getMinZ(processed_trajectory.header.frame_id);
+      double max_z = getMaxZ(processed_trajectory.header.frame_id);
 
-      if (_snap_trajectory_to_safety_area_) {
+      for (int i = 0; i < trajectory_size; i++) {
 
-        // saturate the trajectory to min and max Z
-        if (processed_trajectory.points.at(i).position.z < min_z) {
+        if (_snap_trajectory_to_safety_area_) {
 
-          processed_trajectory.points.at(i).position.z = min_z;
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the trajectory violates the minimum Z!");
+          // saturate the trajectory to min and max Z
+          if (processed_trajectory.points.at(i).position.z < min_z) {
+
+            processed_trajectory.points.at(i).position.z = min_z;
+            RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the trajectory violates the minimum Z!");
+            trajectory_modified = true;
+          }
+
+          if (processed_trajectory.points.at(i).position.z > max_z) {
+
+            processed_trajectory.points.at(i).position.z = max_z;
+            RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the trajectory violates the maximum Z!");
+            trajectory_modified = true;
+          }
+        }
+
+        // check the point against the safety area
+        mrs_msgs::msg::ReferenceStamped des_reference;
+        des_reference.header    = processed_trajectory.header;
+        des_reference.reference = processed_trajectory.points.at(i);
+
+        if (!isPointInSafetyArea3d(des_reference)) {
+
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the trajectory contains points outside of the safety area!");
           trajectory_modified = true;
-        }
 
-        if (processed_trajectory.points.at(i).position.z > max_z) {
+          // the first invalid point
+          if (first_invalid_idx == -1) {
 
-          processed_trajectory.points.at(i).position.z = max_z;
-          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the trajectory violates the maximum Z!");
-          trajectory_modified = true;
-        }
-      }
+            first_invalid_idx = i;
 
-      // check the point against the safety area
-      mrs_msgs::msg::ReferenceStamped des_reference;
-      des_reference.header    = processed_trajectory.header;
-      des_reference.reference = processed_trajectory.points.at(i);
+            last_valid_idx = i - 1;
+          }
 
-      if (!isPointInSafetyArea3d(des_reference)) {
+          // the point is ok
+        } else {
 
-        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the trajectory contains points outside of the safety area!");
-        trajectory_modified = true;
+          // we found a point, which is ok, after finding a point which was not ok
+          if (first_invalid_idx != -1) {
 
-        // the first invalid point
-        if (first_invalid_idx == -1) {
+            // special case, we had no valid point so far
+            if (last_valid_idx == -1) {
 
-          first_invalid_idx = i;
+              ss << "the trajectory starts outside of the safety area!";
+              RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+              return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
 
-          last_valid_idx = i - 1;
-        }
+              // we have a valid point in the past
+            } else {
 
-        // the point is ok
-      } else {
-
-        // we found a point, which is ok, after finding a point which was not ok
-        if (first_invalid_idx != -1) {
-
-          // special case, we had no valid point so far
-          if (last_valid_idx == -1) {
-
-            ss << "the trajectory starts outside of the safety area!";
-            RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
-            return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
-
-            // we have a valid point in the past
-          } else {
-
-            if (!_snap_trajectory_to_safety_area_) {
-              break;
-            }
-
-            bool interpolation_success = true;
-
-            // iterpolate between the last valid point and this new valid point
-            double angle = atan2((processed_trajectory.points.at(i).position.y - processed_trajectory.points.at(last_valid_idx).position.y),
-                                 (processed_trajectory.points.at(i).position.x - processed_trajectory.points.at(last_valid_idx).position.x));
-
-            double dist_two_points = mrs_lib::geometry::dist(
-                vec2_t(processed_trajectory.points.at(i).position.x, processed_trajectory.points.at(i).position.y),
-                vec2_t(processed_trajectory.points.at(last_valid_idx).position.x, processed_trajectory.points.at(last_valid_idx).position.y));
-            double step = dist_two_points / (i - last_valid_idx);
-
-            for (int j = last_valid_idx; j < i; j++) {
-
-              mrs_msgs::msg::ReferenceStamped temp_point;
-              temp_point.header.frame_id      = processed_trajectory.header.frame_id;
-              temp_point.reference.position.x = processed_trajectory.points.at(last_valid_idx).position.x + (j - last_valid_idx) * cos(angle) * step;
-              temp_point.reference.position.y = processed_trajectory.points.at(last_valid_idx).position.y + (j - last_valid_idx) * sin(angle) * step;
-
-              if (!isPointInSafetyArea2d(temp_point)) {
-
-                interpolation_success = false;
+              if (!_snap_trajectory_to_safety_area_) {
                 break;
+              }
 
-              } else {
+              bool interpolation_success = true;
 
-                processed_trajectory.points.at(j).position.x = temp_point.reference.position.x;
-                processed_trajectory.points.at(j).position.y = temp_point.reference.position.y;
+              // iterpolate between the last valid point and this new valid
+              // point
+              double angle = atan2((processed_trajectory.points.at(i).position.y - processed_trajectory.points.at(last_valid_idx).position.y),
+                                   (processed_trajectory.points.at(i).position.x - processed_trajectory.points.at(last_valid_idx).position.x));
+
+              double dist_two_points = mrs_lib::geometry::dist(
+                  vec2_t(processed_trajectory.points.at(i).position.x, processed_trajectory.points.at(i).position.y),
+                  vec2_t(processed_trajectory.points.at(last_valid_idx).position.x, processed_trajectory.points.at(last_valid_idx).position.y));
+              double step = dist_two_points / (i - last_valid_idx);
+
+              for (int j = last_valid_idx; j < i; j++) {
+                mrs_msgs::msg::ReferenceStamped temp_point;
+                temp_point.header.frame_id      = processed_trajectory.header.frame_id;
+                temp_point.reference.position.x = processed_trajectory.points.at(last_valid_idx).position.x + (j - last_valid_idx) * cos(angle) * step;
+                temp_point.reference.position.y = processed_trajectory.points.at(last_valid_idx).position.y + (j - last_valid_idx) * sin(angle) * step;
+
+                if (!isPointInSafetyArea2d(temp_point)) {
+                  interpolation_success = false;
+                  break;
+                } else {
+                  processed_trajectory.points.at(j).position.x = temp_point.reference.position.x;
+                  processed_trajectory.points.at(j).position.y = temp_point.reference.position.y;
+                }
+              }
+
+              if (!interpolation_success) {
+                break;
               }
             }
 
-            if (!interpolation_success) {
-              break;
-            }
+            first_invalid_idx = -1;
           }
+        }
 
-          first_invalid_idx = -1;
+        // special case, the trajectory does not end with a valid point
+        if (first_invalid_idx != -1) {
+
+          // super special case, the whole trajectory is invalid
+          if (first_invalid_idx == 0) {
+
+            ss << "the whole trajectory is outside of the safety area!";
+            RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+            return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
+
+            // there is a good portion of the trajectory in the beginning
+          } else {
+
+            trajectory_size = last_valid_idx + 1;
+            processed_trajectory.points.resize(trajectory_size);
+            trajectory_modified = true;
+          }
         }
       }
     }
 
-    // special case, the trajectory does not end with a valid point
-    if (first_invalid_idx != -1) {
+    if (trajectory_size == 0) {
 
-      // super special case, the whole trajectory is invalid
-      if (first_invalid_idx == 0) {
+      ss << "the trajectory happened to be empty after all the checks! This message should not appear!";
+      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+      return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
+    }
 
-        ss << "the whole trajectory is outside of the safety area!";
+    //}
+
+    /* transform the trajectory to the current control frame //{ */
+
+    std::optional<geometry_msgs::msg::TransformStamped> tf_traj_state;
+
+    if (rclcpp::Time(processed_trajectory.header.stamp).seconds() > clock_->now().seconds()) {
+      tf_traj_state = transformer_->getTransform(processed_trajectory.header.frame_id, "", processed_trajectory.header.stamp);
+    } else {
+      tf_traj_state = transformer_->getTransform(processed_trajectory.header.frame_id, "", uav_state_.header.stamp);
+    }
+
+    if (!tf_traj_state) {
+      ss << "could not create TF transformer for the trajectory";
+      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+      return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
+    }
+
+    processed_trajectory.header.frame_id = transformer_->frame_to(*tf_traj_state);
+
+    for (int i = 0; i < trajectory_size; i++) {
+
+      mrs_msgs::msg::ReferenceStamped trajectory_point;
+      trajectory_point.header    = processed_trajectory.header;
+      trajectory_point.reference = processed_trajectory.points.at(i);
+
+      auto ret = transformer_->transform(trajectory_point, *tf_traj_state);
+
+      if (!ret) {
+
+        ss << "trajectory cannnot be transformed";
         RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
         return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
 
-        // there is a good portion of the trajectory in the beginning
       } else {
 
-        trajectory_size = last_valid_idx + 1;
-        processed_trajectory.points.resize(trajectory_size);
-        trajectory_modified = true;
+        // transform the points in the trajectory to the current frame
+        processed_trajectory.points.at(i) = ret.value().reference;
       }
     }
-  }
 
-  if (trajectory_size == 0) {
+    //}
 
-    ss << "the trajectory happened to be empty after all the checks! This message should not appear!";
-    RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
-    return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
-  }
+    std::shared_ptr<mrs_msgs::srv::TrajectoryReferenceSrv::Request> request = std::make_shared<mrs_msgs::srv::TrajectoryReferenceSrv::Request>();
 
-  //}
-
-  /* transform the trajectory to the current control frame //{ */
-
-  std::optional<geometry_msgs::msg::TransformStamped> tf_traj_state;
-
-  if (rclcpp::Time(processed_trajectory.header.stamp).seconds() > clock_->now().seconds()) {
-    tf_traj_state = transformer_->getTransform(processed_trajectory.header.frame_id, "", processed_trajectory.header.stamp);
-  } else {
-    tf_traj_state = transformer_->getTransform(processed_trajectory.header.frame_id, "", uav_state_.header.stamp);
-  }
-
-  if (!tf_traj_state) {
-    ss << "could not create TF transformer for the trajectory";
-    RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
-    return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
-  }
-
-  processed_trajectory.header.frame_id = transformer_->frame_to(*tf_traj_state);
-
-  for (int i = 0; i < trajectory_size; i++) {
-
-    mrs_msgs::msg::ReferenceStamped trajectory_point;
-    trajectory_point.header    = processed_trajectory.header;
-    trajectory_point.reference = processed_trajectory.points.at(i);
-
-    auto ret = transformer_->transform(trajectory_point, *tf_traj_state);
-
-    if (!ret) {
-
-      ss << "trajectory cannnot be transformed";
-      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+    // check for empty trajectory
+    if (processed_trajectory.points.size() == 0) {
+      ss << "reference trajectory was processing and it is now empty, this should not happen!";
+      RCLCPP_ERROR_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
       return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
-
-    } else {
-
-      // transform the points in the trajectory to the current frame
-      processed_trajectory.points.at(i) = ret.value().reference;
-    }
-  }
-
-  //}
-
-  std::shared_ptr<mrs_msgs::srv::TrajectoryReferenceSrv::Request> request = std::make_shared<mrs_msgs::srv::TrajectoryReferenceSrv::Request>();
-
-  // check for empty trajectory
-  if (processed_trajectory.points.size() == 0) {
-    ss << "reference trajectory was processing and it is now empty, this should not happen!";
-    RCLCPP_ERROR_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
-    return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
-  }
-
-  // prepare the message for current tracker
-  request->trajectory = processed_trajectory;
-
-  bool                     success;
-  std::string              message;
-  bool                     modified;
-  std::vector<std::string> tracker_names;
-  std::vector<bool>        tracker_successes;
-  std::vector<std::string> tracker_messages;
-
-  {
-    std::scoped_lock lock(mutex_tracker_list_);
-
-    // set the trajectory to the currently active tracker
-    auto response = tracker_list_.at(active_tracker_idx_)->setTrajectoryReference(request);
-
-    tracker_names.push_back(_tracker_names_.at(active_tracker_idx_));
-
-    if (response != nullptr) {
-
-      success  = response->success;
-      message  = response->message;
-      modified = response->modified || trajectory_modified;
-      tracker_successes.push_back(response->success);
-      tracker_messages.push_back(response->message);
-
-    } else {
-
-      ss << "the active tracker '" << _tracker_names_.at(active_tracker_idx_) << "' does not implement the 'setTrajectoryReference()' function!";
-      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
-
-      success  = true;
-      message  = ss.str();
-      modified = false;
-      tracker_successes.push_back(false);
-      tracker_messages.push_back(ss.str());
     }
 
-    // set the trajectory to the non-active trackers
-    for (size_t i = 0; i < tracker_list_.size(); i++) {
+    // prepare the message for current tracker
+    request->trajectory = processed_trajectory;
 
-      if (i != active_tracker_idx_) {
+    bool                     success;
+    std::string              message;
+    bool                     modified;
+    std::vector<std::string> tracker_names;
+    std::vector<bool>        tracker_successes;
+    std::vector<std::string> tracker_messages;
 
-        tracker_names.push_back(_tracker_names_.at(i));
+    {
+      std::scoped_lock lock(mutex_tracker_list_);
 
-        response = tracker_list_.at(i)->setTrajectoryReference(request);
+      // set the trajectory to the currently active tracker
+      auto response = tracker_list_.at(active_tracker_idx_)->setTrajectoryReference(request);
 
-        if (response != nullptr) {
+      tracker_names.push_back(_tracker_names_.at(active_tracker_idx_));
 
-          tracker_successes.push_back(response->success);
-          tracker_messages.push_back(response->message);
+      if (response != nullptr) {
 
-          if (response->success) {
+        success  = response->success;
+        message  = response->message;
+        modified = response->modified || trajectory_modified;
+        tracker_successes.push_back(response->success);
+        tracker_messages.push_back(response->message);
+
+      } else {
+
+        ss << "the active tracker '" << _tracker_names_.at(active_tracker_idx_) << "' does not implement the 'setTrajectoryReference()' function!";
+        RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+
+        success  = true;
+        message  = ss.str();
+        modified = false;
+        tracker_successes.push_back(false);
+        tracker_messages.push_back(ss.str());
+      }
+
+      // set the trajectory to the non-active trackers
+      for (size_t i = 0; i < tracker_list_.size(); i++) {
+
+        if (i != active_tracker_idx_) {
+
+          tracker_names.push_back(_tracker_names_.at(i));
+
+          response = tracker_list_.at(i)->setTrajectoryReference(request);
+
+          if (response != nullptr) {
+
+            tracker_successes.push_back(response->success);
+            tracker_messages.push_back(response->message);
+
+            if (response->success) {
+              std::stringstream ss;
+              ss << "trajectory loaded to non-active tracker '" << _tracker_names_.at(i);
+              RCLCPP_INFO_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+            }
+
+          } else {
+
             std::stringstream ss;
-            ss << "trajectory loaded to non-active tracker '" << _tracker_names_.at(i);
-            RCLCPP_INFO_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+            ss << "the tracker \"" << _tracker_names_.at(i) << "\" does not implement setTrajectoryReference()";
+            tracker_successes.push_back(false);
+            tracker_messages.push_back(ss.str());
           }
-
-        } else {
-
-          std::stringstream ss;
-          ss << "the tracker \"" << _tracker_names_.at(i) << "\" does not implement setTrajectoryReference()";
-          tracker_successes.push_back(false);
-          tracker_messages.push_back(ss.str());
         }
       }
     }
-  }
 
-  return std::tuple(success, message, modified, tracker_names, tracker_successes, tracker_messages);
+    return std::tuple(success, message, modified, tracker_names, tracker_successes, tracker_messages);
+  } else {
+
+    ss << "safety area diagnostics message is not available, can not set trajectory";
+    RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+    return std::tuple(false, ss.str(), false, std::vector<std::string>(), std::vector<bool>(), std::vector<std::string>());
+  }
 }
 
 //}
@@ -6936,145 +6714,77 @@ double ControlManager::getMass(void) {
 // | ----------------------- safety area ---------------------- |
 
 /* //{ isPointInSafetyArea3d() */
-
 bool ControlManager::isPointInSafetyArea3d(const mrs_msgs::msg::ReferenceStamped &point) {
+  std::shared_ptr<mrs_msgs::srv::ReferenceStampedSrv::Request> request = std::make_shared<mrs_msgs::srv::ReferenceStampedSrv::Request>();
 
-  if (!use_safety_area_) {
-    return true;
-  }
+  request->header    = point.header;
+  request->reference = point.reference;
 
-  auto tfed_horizontal = transformer_->transformSingle(point, _safety_area_horizontal_frame_);
-
-  if (!tfed_horizontal) {
-    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "SafetyArea: Could not transform the point to the safety area horizontal frame");
+  auto response = sch_point_in_safety_area_3d_.callSync(request);
+  if (!response) {
+    RCLCPP_WARN(node_->get_logger(), "SafetyArea: Service call to check if the point is in the safety area failed");
     return false;
   }
-
-  if (!safety_zone_->isPointValid(tfed_horizontal->reference.position.x, tfed_horizontal->reference.position.y)) {
-    return false;
-  }
-
-  if (point.reference.position.z < getMinZ(point.header.frame_id) || point.reference.position.z > getMaxZ(point.header.frame_id)) {
-    return false;
-  }
-
-  return true;
+  return response.value()->success;
 }
 
 //}
 
 /* //{ isPointInSafetyArea2d() */
-
 bool ControlManager::isPointInSafetyArea2d(const mrs_msgs::msg::ReferenceStamped &point) {
 
-  if (!use_safety_area_) {
-    return true;
-  }
+  std::shared_ptr<mrs_msgs::srv::ReferenceStampedSrv::Request> request = std::make_shared<mrs_msgs::srv::ReferenceStampedSrv::Request>();
 
-  auto tfed_horizontal = transformer_->transformSingle(point, _safety_area_horizontal_frame_);
+  request->header    = point.header;
+  request->reference = point.reference;
 
-  if (!tfed_horizontal) {
-    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "SafetyArea: Could not transform the point to the safety area horizontal frame");
+  auto response = sch_point_in_safety_area_2d_.callSync(request);
+  if (!response) {
+    RCLCPP_WARN(node_->get_logger(), "SafetyArea: Service call to check if the point is in the safety area failed");
     return false;
   }
 
-  if (!safety_zone_->isPointValid(tfed_horizontal->reference.position.x, tfed_horizontal->reference.position.y)) {
-    return false;
-  }
-
-  return true;
+  return response.value()->success;
 }
 
 //}
 
 /* //{ isPathToPointInSafetyArea3d() */
-
 bool ControlManager::isPathToPointInSafetyArea3d(const mrs_msgs::msg::ReferenceStamped &start, const mrs_msgs::msg::ReferenceStamped &end) {
+  std::shared_ptr<mrs_msgs::srv::ValidatePathToPointSrv::Request> request = std::make_shared<mrs_msgs::srv::ValidatePathToPointSrv::Request>();
 
-  if (!use_safety_area_) {
-    return true;
-  }
+  request->start.header = start.header;
+  request->start.point  = start.reference.position;
 
-  if (!isPointInSafetyArea3d(start) || !isPointInSafetyArea3d(end)) {
+  request->end.header = end.header;
+  request->end.point  = end.reference.position;
+
+  auto response = sch_path_to_point_in_safety_area_3d_.callSync(request);
+  if (!response) {
+    RCLCPP_WARN(node_->get_logger(), "SafetyArea: Service call to check if the point is in the safety area failed");
     return false;
   }
-
-  mrs_msgs::msg::ReferenceStamped start_transformed, end_transformed;
-
-  {
-    auto ret = transformer_->transformSingle(start, _safety_area_horizontal_frame_);
-
-    if (!ret) {
-
-      RCLCPP_ERROR(node_->get_logger(), "SafetyArea: Could not transform the first point in the path");
-
-      return false;
-    }
-
-    start_transformed = ret.value();
-  }
-
-  {
-    auto ret = transformer_->transformSingle(end, _safety_area_horizontal_frame_);
-
-    if (!ret) {
-
-      RCLCPP_ERROR(node_->get_logger(), "SafetyArea: Could not transform the first point in the path");
-
-      return false;
-    }
-
-    end_transformed = ret.value();
-  }
-
-  return safety_zone_->isPathValid(start_transformed.reference.position.x, start_transformed.reference.position.y, end_transformed.reference.position.x,
-                                   end_transformed.reference.position.y);
+  return response.value()->success;
 }
+
 
 //}
 
 /* //{ isPathToPointInSafetyArea2d() */
-
 bool ControlManager::isPathToPointInSafetyArea2d(const mrs_msgs::msg::ReferenceStamped &start, const mrs_msgs::msg::ReferenceStamped &end) {
+  std::shared_ptr<mrs_msgs::srv::ValidatePathToPointSrv::Request> request = std::make_shared<mrs_msgs::srv::ValidatePathToPointSrv::Request>();
+  request->start.header                                                   = start.header;
+  request->start.point                                                    = start.reference.position;
 
-  if (!use_safety_area_) {
-    return true;
-  }
+  request->end.header = end.header;
+  request->end.point  = end.reference.position;
 
-  mrs_msgs::msg::ReferenceStamped start_transformed, end_transformed;
-
-  if (!isPointInSafetyArea2d(start) || !isPointInSafetyArea2d(end)) {
+  auto response = sch_path_to_point_in_safety_area_2d_.callSync(request);
+  if (!response) {
+    RCLCPP_WARN(node_->get_logger(), "SafetyArea: Service call to check if the point is in the safety area failed");
     return false;
   }
-
-  {
-    auto ret = transformer_->transformSingle(start, _safety_area_horizontal_frame_);
-
-    if (!ret) {
-
-      RCLCPP_ERROR(node_->get_logger(), "SafetyArea: Could not transform the first point in the path");
-
-      return false;
-    }
-
-    start_transformed = ret.value();
-  }
-
-  {
-    auto ret = transformer_->transformSingle(end, _safety_area_horizontal_frame_);
-
-    if (!ret) {
-
-      RCLCPP_ERROR(node_->get_logger(), "SafetyArea: Could not transform the first point in the path");
-
-      return false;
-    }
-
-    end_transformed = ret.value();
-  }
-
-  return safety_zone_->isPathValid(start_transformed.reference.position.x, start_transformed.reference.position.y, end_transformed.reference.position.x,
-                                   end_transformed.reference.position.y);
+  return response.value()->success;
 }
 
 //}
@@ -7083,26 +6793,30 @@ bool ControlManager::isPathToPointInSafetyArea2d(const mrs_msgs::msg::ReferenceS
 
 double ControlManager::getMaxZ(const std::string &frame_id) {
 
-  // | ------- first, calculate max_z from the safety area ------ |
-
   double safety_area_max_z = std::numeric_limits<float>::max();
 
   {
+    // | ------- first, get max_z from the safety area ------ |
+    std::shared_ptr<mrs_msgs::srv::GetReferenceStampedSrv::Request> request = std::make_shared<mrs_msgs::srv::GetReferenceStampedSrv::Request>();
 
-    geometry_msgs::msg::PointStamped point;
 
-    point.header.frame_id = _safety_area_vertical_frame_;
-    point.point.x         = 0;
-    point.point.y         = 0;
-    point.point.z         = _safety_area_max_z_;
+    auto response = sch_get_max_z_.callSync(request);
 
-    auto ret = transformer_->transformSingle(point, frame_id);
+    if (!response) {
+      RCLCPP_WARN(node_->get_logger(), "SafetyArea: Service call to get max_z from the safety area timed out");
+    } else {
+      geometry_msgs::msg::PointStamped point;
+      point.header  = response.value()->reference.header;
+      point.point.x = 0;
+      point.point.y = 0;
+      point.point.z = response.value()->reference.reference.position.z;
+      auto ret      = transformer_->transformSingle(point, frame_id);
 
-    if (!ret) {
-      RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "SafetyArea: Could not transform safety area's max_z to '%s'", frame_id.c_str());
+      if (!ret) {
+        RCLCPP_WARN(node_->get_logger(), "SafetyArea: Could not transform safety area's max_z to '%s'", frame_id.c_str());
+      }
+      safety_area_max_z = ret->point.z;
     }
-
-    safety_area_max_z = ret->point.z;
   }
 
   // | ------------ overwrite from estimation manager ----------- |
@@ -7145,25 +6859,30 @@ double ControlManager::getMaxZ(const std::string &frame_id) {
 
 double ControlManager::getMinZ(const std::string &frame_id) {
 
-  if (!use_safety_area_) {
-    return std::numeric_limits<double>::lowest();
+  {
+    std::shared_ptr<mrs_msgs::srv::GetReferenceStampedSrv::Request> request = std::make_shared<mrs_msgs::srv::GetReferenceStampedSrv::Request>();
+
+    auto response = sch_get_min_z_.callSync(request);
+
+    if (!response) {
+      RCLCPP_WARN(node_->get_logger(), "SafetyArea: Service call to get min_z from the safety area timed out");
+      return std::numeric_limits<double>::lowest();
+    }
+
+    geometry_msgs::msg::PointStamped point;
+    point.header  = response.value()->reference.header;
+    point.point.x = 0;
+    point.point.y = 0;
+    point.point.z = response.value()->reference.reference.position.z;
+    auto ret      = transformer_->transformSingle(point, frame_id);
+
+    if (!ret) {
+      RCLCPP_WARN(node_->get_logger(), "SafetyArea: Could not transform safety area's min_z to '%s'", frame_id.c_str());
+      return std::numeric_limits<double>::lowest();
+    }
+
+    return ret->point.z;
   }
-
-  geometry_msgs::msg::PointStamped point;
-
-  point.header.frame_id = _safety_area_vertical_frame_;
-  point.point.x         = 0;
-  point.point.y         = 0;
-  point.point.z         = _safety_area_min_z_;
-
-  auto ret = transformer_->transformSingle(point, frame_id);
-
-  if (!ret) {
-    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "SafetyArea: Could not transform safety area's min_z to '%s'", frame_id.c_str());
-    return std::numeric_limits<double>::lowest();
-  }
-
-  return ret->point.z;
 }
 
 //}
@@ -7263,18 +6982,20 @@ void ControlManager::bumperPushFromObstacle(void) {
   // check for vertical collision down
   if (bumper_data->sectors.at(bumper_data->n_horizontal_sectors) > 0 && bumper_data->sectors.at(bumper_data->n_horizontal_sectors) <= min_distance_vertical) {
 
-    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "Bumper: potential collision below");
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "Bumper: potential collision below, obstacle distance: %.2f, limit: %.2f",
+                         bumper_data->sectors.at(bumper_data->n_horizontal_sectors), min_distance_vertical);
     vertical_collision_detected = true;
-    vertical_repulsion_distance = min_distance_vertical - bumper_data->sectors.at(bumper_data->n_horizontal_sectors);
+    vertical_repulsion_distance = min_distance_vertical - bumper_data->sectors.at(bumper_data->n_horizontal_sectors) + _bumper_vertical_overshoot_;
   }
 
   // check for vertical collision up
   if (bumper_data->sectors.at(bumper_data->n_horizontal_sectors + 1) > 0 &&
       bumper_data->sectors.at(bumper_data->n_horizontal_sectors + 1) <= min_distance_vertical) {
 
-    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "Bumper: potential collision above");
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "Bumper: potential collision above, obstacle distance: %.2f, limit: %.2f",
+                         bumper_data->sectors.at(bumper_data->n_horizontal_sectors + 1), min_distance_vertical);
     vertical_collision_detected = true;
-    vertical_repulsion_distance = -(min_distance_vertical - bumper_data->sectors.at(bumper_data->n_horizontal_sectors + 1));
+    vertical_repulsion_distance = -(min_distance_vertical - bumper_data->sectors.at(bumper_data->n_horizontal_sectors + 1) + _bumper_vertical_overshoot_);
   }
 
   // if potential collision was detected and we should start the repulsing_
@@ -9031,7 +8752,7 @@ mrs_msgs::msg::ReferenceStamped ControlManager::velocityReferenceToReference(con
 
     double stopping_time_z = 0;
 
-    if (vel_reference.reference.velocity.x >= 0) {
+    if (vel_reference.reference.velocity.z >= 0) {
       stopping_time_z = 1.5 * (fabs(vel_reference.reference.velocity.z) / current_constraints.constraints.vertical_ascending_acceleration) + 1.0;
     } else {
       stopping_time_z = 1.5 * (fabs(vel_reference.reference.velocity.z) / current_constraints.constraints.vertical_descending_acceleration) + 1.0;

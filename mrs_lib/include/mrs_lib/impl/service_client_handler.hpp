@@ -10,6 +10,167 @@
 namespace mrs_lib
 {
 
+  namespace internal
+  {
+
+    template <typename ServiceType>
+      requires(rosidl_generator_traits::is_service<ServiceType>::value)
+    class [[nodiscard("This service call is only performed when `co_await`ed.")]] ServiceAwaitable
+    {
+      using Client = rclcpp::Client<ServiceType>;
+      using Response = ServiceType::Response;
+      using Request = ServiceType::Request;
+
+    public:
+      ServiceAwaitable(const ServiceAwaitable&) = delete;
+      ServiceAwaitable& operator=(const ServiceAwaitable&) = delete;
+      ServiceAwaitable(ServiceAwaitable&&) = delete;
+      ServiceAwaitable& operator=(ServiceAwaitable&&) = delete;
+
+      bool await_ready()
+      {
+        return false;
+      }
+
+      bool await_suspend(std::coroutine_handle<> continuation)
+      {
+        // Store the continuation into the awaitable.
+        // It will either be invoked when the service completes or destroyed if it is cancelled.
+        data_.continuation = continuation;
+        std::shared_ptr<Client> client = data_.client.lock();
+        if (client == nullptr || !client->service_is_ready())
+        {
+          data_.response = std::nullopt;
+          // Do not suspend
+          return false;
+        }
+        client->async_send_request(data_.request,
+                                   std::function([data_handle = DataHandle(data_)](std::shared_future<std::shared_ptr<Response>> future) mutable {
+                                     auto data = data_handle.leak();
+                                     data->response = future.get();
+                                     (*data).response = future.get();
+                                     auto continuation = std::exchange(data->continuation, nullptr);
+                                     internal::resume_coroutine(continuation);
+                                   }));
+        return true;
+      }
+
+      std::optional<std::shared_ptr<Response>> await_resume()
+      {
+        return data_.response;
+      }
+
+    private:
+      ServiceAwaitable(std::weak_ptr<Client> client, std::shared_ptr<Request> request)
+          : data_{
+                .client = std::move(client),
+                .request = std::move(request),
+            }
+      {
+      }
+
+      struct Data
+      {
+        std::weak_ptr<Client> client;
+        std::shared_ptr<Request> request;
+        std::optional<std::shared_ptr<Response>> response = std::nullopt;
+        std::coroutine_handle<> continuation = nullptr;
+        // Intrusive ref counting - used to destroy continuation in case of cancellation
+        std::atomic<size_t> ref_count = 0;
+      };
+
+      class DataHandle
+      {
+      public:
+        DataHandle(Data& data) : data_(&data)
+        {
+          size_t prev_ref_count = data_->ref_count.fetch_add(1);
+          // This constructor is called when awaiting the result.
+          // We do not allow multiple awaits, thus, this should always be zero.
+          assert(prev_ref_count == 0);
+        }
+
+        DataHandle(const DataHandle& other) : data_(other.data_)
+        {
+          data_->ref_count++;
+        }
+
+        DataHandle& operator=(const DataHandle& other)
+        {
+          decrement_ref_count_();
+          data_ = other.data_;
+          return *this;
+        }
+
+        DataHandle(DataHandle&& other) : data_(other.data_)
+        {
+          data_->ref_count++;
+        }
+
+        DataHandle& operator=(DataHandle&& other)
+        {
+          decrement_ref_count_();
+          data_ = other.data_;
+          return *this;
+        }
+
+        ~DataHandle()
+        {
+          decrement_ref_count_();
+        }
+
+        Data& operator*() const
+        {
+          assert(data_);
+          return *data_;
+        }
+
+        Data* operator->() const
+        {
+          assert(data_);
+          return data_;
+        }
+
+        Data* leak()
+        {
+          assert(data_);
+          return std::exchange(data_, nullptr);
+        }
+
+      private:
+        void decrement_ref_count_()
+        {
+          if (data_ == nullptr)
+          {
+            return;
+          }
+
+          size_t prev_ref_count = data_->ref_count.fetch_sub(1);
+          // This is the last instance - we need to destroy the continuation
+          if (prev_ref_count == 1)
+          {
+            // Copy coroutine handle into the current frame
+            // (`*data_` is stored in the coroutine it will be destroying)
+            auto continuation = data_->continuation;
+            // The continuation may be null if it was reset or not set at all
+            if (continuation != nullptr)
+            {
+              // Destroy the non finished coroutine
+              continuation.destroy();
+            }
+          }
+        }
+
+        Data* data_;
+      };
+
+      Data data_;
+
+      friend class ServiceClientHandler<ServiceType>;
+    };
+
+  } // namespace internal
+
   // --------------------------------------------------------------
   // |                    ServiceClientHandler                    |
   // --------------------------------------------------------------
@@ -18,25 +179,26 @@ namespace mrs_lib
 
   template <class ServiceType>
   ServiceClientHandler<ServiceType>::ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos)
-    : impl_(std::make_shared<Impl>(node, address, qos, node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive)))
+      : impl_(std::make_shared<Impl>(node, address, qos, node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive)))
   {
   }
 
   template <class ServiceType>
-  ServiceClientHandler<ServiceType>::ServiceClientHandler()
-    : impl_(nullptr)
+  ServiceClientHandler<ServiceType>::ServiceClientHandler() : impl_(nullptr)
   {
   }
 
   template <class ServiceType>
-  ServiceClientHandler<ServiceType>::ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos, const rclcpp::CallbackGroup::SharedPtr& callback_group)
-    : impl_(std::make_shared<Impl>(node, address, qos, callback_group))
+  ServiceClientHandler<ServiceType>::ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos,
+                                                          const rclcpp::CallbackGroup::SharedPtr& callback_group)
+      : impl_(std::make_shared<Impl>(node, address, qos, callback_group))
   {
   }
 
   template <class ServiceType>
-  ServiceClientHandler<ServiceType>::ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::CallbackGroup::SharedPtr& callback_group)
-    : ServiceClientHandler(node, address, rclcpp::ServicesQoS(), callback_group)
+  ServiceClientHandler<ServiceType>::ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address,
+                                                          const rclcpp::CallbackGroup::SharedPtr& callback_group)
+      : ServiceClientHandler(node, address, rclcpp::ServicesQoS(), callback_group)
   {
   }
 
@@ -45,7 +207,8 @@ namespace mrs_lib
   /* callSync(const ServiceType::Request& request, ServiceType::Response& response) //{ */
 
   template <class ServiceType>
-  std::optional<std::shared_ptr<typename ServiceType::Response>> ServiceClientHandler<ServiceType>::callSync(const std::shared_ptr<typename ServiceType::Request>& request)
+  std::optional<std::shared_ptr<typename ServiceType::Response>>
+  ServiceClientHandler<ServiceType>::callSync(const std::shared_ptr<typename ServiceType::Request>& request)
   {
     if (!impl_)
     {
@@ -60,14 +223,73 @@ namespace mrs_lib
   /* callAsync(const ServiceType::Request& request, ServiceType::Response& response) //{ */
 
   template <class ServiceType>
-  std::optional<std::shared_future<std::shared_ptr<typename ServiceType::Response>>> ServiceClientHandler<ServiceType>::callAsync(const std::shared_ptr<typename ServiceType::Request>& request)
+  std::optional<std::shared_future<std::shared_ptr<typename ServiceType::Response>>>
+  ServiceClientHandler<ServiceType>::callAsync(const std::shared_ptr<typename ServiceType::Request>& request)
   {
     if (!impl_)
     {
-      RCLCPP_ERROR(rclcpp::get_logger("ServiceClientHandler"), "Not initialized, cannot use callSync()!");
+      RCLCPP_ERROR(rclcpp::get_logger("ServiceClientHandler"), "Not initialized, cannot use callAsync()!");
       return std::nullopt;
     }
     return impl_->callAsync(request);
+  }
+
+  //}
+
+  template <class ServiceType>
+  Task<std::optional<std::shared_ptr<typename ServiceType::Response>>>
+  ServiceClientHandler<ServiceType>::callAwaitable(std::shared_ptr<typename ServiceType::Request> request)
+  {
+    if (!impl_)
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("ServiceClientHandler"), "Not initialized, cannot use callAwaitable()!");
+      co_return std::nullopt;
+    }
+
+    co_return co_await impl_->callAwaitable(request);
+  }
+
+  /* getServiceName() //{ */
+
+  template <class ServiceType>
+  std::string ServiceClientHandler<ServiceType>::getServiceName() const
+  {
+    if (!impl_)
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("ServiceClientHandler"), "Not initialized, cannot use getServiceName()!");
+      return {};
+    }
+    return impl_->getServiceName();
+  }
+
+  //}
+
+  /* waitForService() //{ */
+
+  template <class ServiceType>
+  template <typename RepT, typename RatioT>
+  bool ServiceClientHandler<ServiceType>::waitForService(std::chrono::duration<RepT, RatioT> timeout)
+  {
+    if (!impl_)
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("ServiceClientHandler"), "Not initialized, cannot use waitForService()!");
+      return false;
+    }
+    return impl_->waitForService(timeout);
+  }
+
+  //}
+
+  /* isServiceReady() //{ */
+  template <class ServiceType>
+  bool ServiceClientHandler<ServiceType>::isServiceReady() const
+  {
+    if (!impl_)
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("ServiceClientHandler"), "Not initialized, cannot use isServiceReady()!");
+      return false;
+    }
+    return impl_->isServiceReady();
   }
 
   //}
@@ -82,10 +304,10 @@ namespace mrs_lib
    * @brief implementation of the service client handler
    */
   template <class ServiceType>
-  class ServiceClientHandler<ServiceType>::Impl {
+  class ServiceClientHandler<ServiceType>::Impl
+  {
 
   public:
-
     /**
      * @brief constructor
      *
@@ -95,9 +317,9 @@ namespace mrs_lib
      * @param callback_group callback group
      */
     Impl(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos, const rclcpp::CallbackGroup::SharedPtr& callback_group)
-      : callback_group_(callback_group),
-        service_client_(node->create_client<ServiceType>(address, qos, callback_group))
+        : callback_group_(callback_group), service_client_(node->create_client<ServiceType>(address, qos, callback_group))
     {
+      RCLCPP_INFO_STREAM(node->get_logger(), "Created client '" << address << "' -> '" << service_client_->get_service_name() << "'");
     }
 
     /**
@@ -148,6 +370,44 @@ namespace mrs_lib
       return future;
     }
 
+    internal::ServiceAwaitable<ServiceType> callAwaitable(const std::shared_ptr<typename ServiceType::Request>& request)
+    {
+      return internal::ServiceAwaitable<ServiceType>(service_client_, request);
+    }
+
+    /**
+     * @brief Returns the name of the service this client connects to
+     *
+     * @return service name
+     */
+    std::string getServiceName() const
+    {
+      return service_client_->get_service_name();
+    }
+
+    /**
+     * @brief Waits for the service to be available
+     *
+     * @param timeout maximum time to wait for the service
+     *
+     * @return true if the service is available, false otherwise
+     */
+    template <typename RepT = int64_t, typename RatioT = std::milli>
+    bool waitForService(std::chrono::duration<RepT, RatioT> timeout)
+    {
+      return service_client_->wait_for_service(timeout);
+    }
+
+    /**
+     * @brief Checks if the service is available
+     *
+     * @return true if the service is available, false otherwise
+     */
+    bool isServiceReady() const
+    {
+      return service_client_->service_is_ready();
+    }
+
   private:
     rclcpp::CallbackGroup::SharedPtr callback_group_;
     typename rclcpp::Client<ServiceType>::SharedPtr service_client_;
@@ -155,4 +415,4 @@ namespace mrs_lib
 
   //}
 
-}  // namespace mrs_lib
+} // namespace mrs_lib

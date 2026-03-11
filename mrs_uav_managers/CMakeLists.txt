@@ -60,6 +60,7 @@ set(LIBRARIES
   MrsUavManagers_UavManager
   MrsUavManagers_ConstraintManager
   MrsUavManagers_GainManager
+  MrsUavManagers_SafetyAreaManager
 )
 
 ## --------------------------------------------------------------
@@ -166,6 +167,34 @@ target_link_libraries(MrsUavManagers_ControlManager
 rclcpp_components_register_nodes(MrsUavManagers_ControlManager "mrs_uav_managers::control_manager::ControlManager")
 
 target_compile_definitions(MrsUavManagers_ControlManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER} COVERAGE=${COVERAGE})
+
+# Safety Area Manager
+
+add_library(MrsUavManagers_SafetyAreaManager SHARED
+  src/safety_area_manager.cpp
+)
+
+target_link_libraries(MrsUavManagers_SafetyAreaManager
+  PRIVATE
+    mrs_uav_managers::mrs_uav_managers
+    rclcpp::rclcpp
+    rclcpp_components::component
+    mrs_lib::mrs_lib
+    pluginlib::pluginlib
+    mrs_uav_hw_api::mrs_uav_hw_api
+    Eigen3::Eigen
+    ${mrs_msgs_TARGETS}
+    ${geometry_msgs_TARGETS}
+    ${nav_msgs_TARGETS}
+    ${std_msgs_TARGETS}
+    ${sensor_msgs_TARGETS}
+    ${visualization_msgs_TARGETS}
+    ${tf2_geometry_msgs_TARGETS}
+)
+
+rclcpp_components_register_nodes(MrsUavManagers_SafetyAreaManager "mrs_uav_managers::safety_area_manager::SafetyAreaManager")
+
+target_compile_definitions(MrsUavManagers_SafetyAreaManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
 
 # UAV Manager
 
@@ -359,6 +388,11 @@ pluginlib_export_plugin_description_file(mrs_uav_managers plugins.xml)
 if(ENABLE_TESTS)
 
   add_subdirectory(test)
+
+  find_package(ament_cmake_clang_format REQUIRED)
+  ament_clang_format(CONFIG_FILE "${PROJECT_SOURCE_DIR}/.clang-format")
+  find_package(ament_cmake_xmllint REQUIRED)
+  ament_xmllint()
 
 endif()
 

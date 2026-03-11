@@ -30,18 +30,9 @@ namespace mrs_lib
   public:
     /* constructor //{ */
     Impl(const SubscriberHandlerOptions& options, const message_callback_t& message_callback = message_callback_t())
-        : m_node(options.node),
-          m_qos(options.qos),
-          m_sub_opts(options.subscription_options),
-          m_topic_name(options.topic_name),
-          m_node_name(options.node_name),
-          m_got_data(false),
-          m_new_data(false),
-          m_used_data(false),
-          m_timeout_manager(options.timeout_manager),
-          m_latest_message_time(0),
-          m_latest_message(nullptr),
-          m_message_callback(message_callback)
+        : m_node(options.node), m_qos(options.qos), m_sub_opts(options.subscription_options), m_topic_name(options.topic_name), m_node_name(options.node_name),
+          m_got_data(false), m_new_data(false), m_used_data(false), m_timeout_manager(options.timeout_manager), m_latest_message_time(0),
+          m_latest_message(nullptr), m_message_callback(message_callback)
     {
 
       // initialize the callback for the TimeoutManager
@@ -66,10 +57,6 @@ namespace mrs_lib
         // register the timeout callback with the TimeoutManager
         m_timeout_id = m_timeout_manager->registerNew(options.no_message_timeout, m_timeout_mgr_callback, m_node->get_clock()->now());
       }
-
-      const std::string msg = "Subscribed to topic '" + m_topic_name + "' -> '" + m_topic_name + "'";
-
-      RCLCPP_INFO_STREAM(m_node->get_logger(), msg);
     }
     //}
 
@@ -153,7 +140,7 @@ namespace mrs_lib
 
       if (ret.empty())
       {
-        ret = m_node->get_node_topics_interface()->resolve_topic_name(ret);
+        ret = m_node->get_node_topics_interface()->resolve_topic_name(m_topic_name);
       }
 
       return ret;
@@ -202,6 +189,7 @@ namespace mrs_lib
       const std::function<void(const typename MessageType::SharedPtr)> cbk = std::bind(&Impl::data_callback, this, std::placeholders::_1);
 
       m_sub = m_node->create_subscription<MessageType>(m_topic_name, m_qos, cbk, m_sub_opts);
+      RCLCPP_INFO_STREAM(m_node->get_logger(), "Subscribed to topic '" << m_topic_name << "' -> '" << m_sub->get_topic_name() << "'");
     }
     //}
 
@@ -228,13 +216,13 @@ namespace mrs_lib
     std::string m_node_name;
 
   protected:
-    bool m_got_data;  // whether any data was received
+    bool m_got_data; // whether any data was received
 
     mutable std::mutex m_new_data_mtx;
     mutable std::condition_variable m_new_data_cv;
-    bool m_new_data;  // whether new data was received since last call to get_data
+    bool m_new_data; // whether new data was received since last call to get_data
 
-    bool m_used_data;  // whether get_data was successfully called at least once
+    bool m_used_data; // whether get_data was successfully called at least once
 
   protected:
     std::shared_ptr<mrs_lib::TimeoutManager> m_timeout_manager;
@@ -382,6 +370,6 @@ namespace mrs_lib
   };
   //}
 
-}  // namespace mrs_lib
+} // namespace mrs_lib
 
-#endif  // SUBSCRIBER_HANDLER_HPP
+#endif // SUBSCRIBER_HANDLER_HPP

@@ -16,8 +16,8 @@
 #include <std_srvs/srv/set_bool.hpp>
 
 #include <mrs_msgs/msg/control_manager_diagnostics.hpp>
+#include <mrs_msgs/msg/safety_area_manager_diagnostics.hpp>
 #include <mrs_msgs/msg/uav_manager_diagnostics.hpp>
-#include <mrs_msgs/srv/validate_reference.hpp>
 #include <mrs_msgs/msg/gazebo_spawner_diagnostics.hpp>
 #include <mrs_msgs/msg/hw_api_status.hpp>
 #include <mrs_msgs/msg/hw_api_capabilities.hpp>
@@ -97,8 +97,6 @@ private:
   rclcpp::CallbackGroup::SharedPtr cbkgrp_subs_;
   rclcpp::CallbackGroup::SharedPtr cbkgrp_sc_;
 
-  void initialize();
-
   std::atomic<bool> is_initialized_ = false;
 
   std::string _uav_name_;
@@ -106,21 +104,21 @@ private:
 
   // | --------------------- service clients -------------------- |
 
-  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>           service_client_toggle_control_output_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>           service_client_arm_;
-  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>           service_client_takeoff_;
-  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReference> service_client_validate_reference_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool> service_client_toggle_control_output_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool> service_client_arm_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger> service_client_takeoff_;
 
   // | ----------------------- subscribers ---------------------- |
 
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>     sh_estimation_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>               sh_hw_api_status_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>         sh_hw_api_capabilities_;
-  mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>                  sh_distance_sensor_;
-  mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>                    sh_imu_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics> sh_control_manager_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>     sh_uav_manager_diag_;
-  mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>  sh_gazebo_spawner_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::EstimationDiagnostics>        sh_estimation_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>                  sh_hw_api_status_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>            sh_hw_api_capabilities_;
+  mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>                     sh_distance_sensor_;
+  mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>                       sh_imu_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>    sh_control_manager_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics> sh_safety_area_manager_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>        sh_uav_manager_diag_;
+  mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>     sh_gazebo_spawner_diag_;
 
   // | ----------------------- publishers ----------------------- |
 
@@ -160,8 +158,6 @@ private:
   // | ------------------------ routines ------------------------ |
 
   bool takeoff();
-
-  bool validateReference();
 
   bool toggleControlOutput(const bool &value);
   bool disarm();
@@ -227,20 +223,12 @@ private:
 /* AutomaticStart() //{ */
 
 AutomaticStart::AutomaticStart(rclcpp::NodeOptions options) : Node("automatic_start", options) {
-  this->initialize();
-}
-
-//}
-
-/* initialize() //{ */
-
-void AutomaticStart::initialize() {
 
   node_  = this_node_ptr();
   clock_ = node_->get_clock();
 
-  cbkgrp_subs_ = this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-  cbkgrp_sc_   = this_node().create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  cbkgrp_subs_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  cbkgrp_sc_   = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
   armed_      = false;
   armed_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
@@ -248,7 +236,7 @@ void AutomaticStart::initialize() {
   offboard_      = false;
   offboard_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
 
-  mrs_lib::ParamLoader param_loader(this_node_ptr(), "AutomaticStart");
+  mrs_lib::ParamLoader param_loader(node_, "AutomaticStart");
 
   std::string custom_config_path;
 
@@ -289,7 +277,7 @@ void AutomaticStart::initialize() {
   param_loader.loadParam("preflight_check/topic_check/topics", _topic_check_topic_names_);
 
   if (!param_loader.loadedSuccessfully()) {
-    RCLCPP_ERROR(this_node().get_logger(), "Could not load all parameters!");
+    RCLCPP_ERROR(node_->get_logger(), "Could not load all parameters!");
     rclcpp::shutdown();
     exit(1);
   }
@@ -297,7 +285,7 @@ void AutomaticStart::initialize() {
   // | ----------------------- subscribers ---------------------- |
 
   mrs_lib::SubscriberHandlerOptions shopts;
-  shopts.node                                = this_node_ptr();
+  shopts.node                                = node_;
   shopts.no_message_timeout                  = mrs_lib::no_timeout;
   shopts.threadsafe                          = true;
   shopts.autostart                           = true;
@@ -307,25 +295,23 @@ void AutomaticStart::initialize() {
   sh_hw_api_status_   = mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiStatus>(shopts, "~/hw_api_status_in", &AutomaticStart::callbackHwApiStatus, this);
   sh_hw_api_capabilities_ =
       mrs_lib::SubscriberHandler<mrs_msgs::msg::HwApiCapabilities>(shopts, "~/hw_api_capabilities_in", &AutomaticStart::callbackHwApiCapabilities, this);
-  sh_distance_sensor_      = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/distance_sensor_in");
-  sh_imu_                  = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/imu_in");
-  sh_control_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
-  sh_uav_manager_diag_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>(shopts, "~/uav_manager_diagnostics_in");
-  sh_gazebo_spawner_diag_  = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
-                                                                                                 &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
+  sh_distance_sensor_          = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/distance_sensor_in");
+  sh_imu_                      = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/imu_in");
+  sh_control_manager_diag_     = mrs_lib::SubscriberHandler<mrs_msgs::msg::ControlManagerDiagnostics>(shopts, "~/control_manager_diagnostics_in");
+  sh_safety_area_manager_diag_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::SafetyAreaManagerDiagnostics>(shopts, "~/safety_area_manager_diagnostics_in");
+  sh_uav_manager_diag_         = mrs_lib::SubscriberHandler<mrs_msgs::msg::UavManagerDiagnostics>(shopts, "~/uav_manager_diagnostics_in");
+  sh_gazebo_spawner_diag_      = mrs_lib::SubscriberHandler<mrs_msgs::msg::GazeboSpawnerDiagnostics>(shopts, "~/gazebo_spawner_diagnostics_in",
+                                                                                                     &AutomaticStart::callbackGazeboSpawnerDiagnostics, this);
 
   // | ----------------------- publishers ----------------------- |
 
-  ph_can_takeoff_ = mrs_lib::PublisherHandler<std_msgs::msg::Bool>(this_node_ptr(), "~/can_takeoff_out");
+  ph_can_takeoff_ = mrs_lib::PublisherHandler<std_msgs::msg::Bool>(node_, "~/can_takeoff_out");
 
   // | --------------------- service clients -------------------- |
 
-  rclcpp::Node::SharedPtr node = this_node_ptr();
-
-  service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node, "~/takeoff_out", cbkgrp_sc_);
-  service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/toggle_control_output_out", cbkgrp_sc_);
-  service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node, "~/arm_out", cbkgrp_sc_);
-  service_client_validate_reference_    = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ValidateReference>(node, "~/validate_reference_out", cbkgrp_sc_);
+  service_client_takeoff_               = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/takeoff_out", cbkgrp_sc_);
+  service_client_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/toggle_control_output_out", cbkgrp_sc_);
+  service_client_arm_                   = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/arm_out", cbkgrp_sc_);
 
   // | ------------------ setup generic topics ------------------ |
 
@@ -342,7 +328,7 @@ void AutomaticStart::initialize() {
         topic_name = "/" + _uav_name_ + "/" + topic_name;
       }
 
-      Topic tmp_topic(this_node_ptr(), topic_name);
+      Topic tmp_topic(node_, topic_name);
       topic_check_topics_.push_back(tmp_topic);
 
       int id = i; // id to identify which topic called the generic callback
@@ -350,7 +336,7 @@ void AutomaticStart::initialize() {
       std::function<void(std::shared_ptr<rclcpp::SerializedMessage> msg)> callback_fcn =
           std::bind(&AutomaticStart::genericCallback, this, std::placeholders::_1, topic_name, id);
 
-      auto tmp_subscriber = this_node().create_generic_subscription(topic_name, topic_type, rclcpp::SystemDefaultsQoS(), callback_fcn);
+      auto tmp_subscriber = node_->create_generic_subscription(topic_name, topic_type, rclcpp::SystemDefaultsQoS(), callback_fcn);
 
       generic_subscriber_vec_.push_back(tmp_subscriber);
     }
@@ -360,7 +346,7 @@ void AutomaticStart::initialize() {
 
   mrs_lib::TimerHandlerOptions timer_opts_start;
 
-  timer_opts_start.node      = this_node_ptr();
+  timer_opts_start.node      = node_;
   timer_opts_start.autostart = true;
 
   {
@@ -373,7 +359,7 @@ void AutomaticStart::initialize() {
 
   is_initialized_ = true;
 
-  RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "initialized");
+  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "initialized");
 }
 
 //}
@@ -399,7 +385,7 @@ void AutomaticStart::callbackHwApiStatus(const mrs_msgs::msg::HwApiStatus::Const
     return;
   }
 
-  RCLCPP_INFO_ONCE(this_node().get_logger(), "getting HW API status");
+  RCLCPP_INFO_ONCE(node_->get_logger(), "getting HW API status");
 
   std::scoped_lock lock(mutex_hw_api_status_);
 
@@ -458,7 +444,7 @@ void AutomaticStart::callbackHwApiCapabilities([[maybe_unused]] const mrs_msgs::
     return;
   }
 
-  RCLCPP_INFO_ONCE(this_node().get_logger(), "getting HW API capabilities");
+  RCLCPP_INFO_ONCE(node_->get_logger(), "getting HW API capabilities");
 }
 
 //}
@@ -471,7 +457,7 @@ void AutomaticStart::callbackGazeboSpawnerDiagnostics(const mrs_msgs::msg::Gazeb
     return;
   }
 
-  RCLCPP_INFO_ONCE(this_node().get_logger(), "getting spawner diagnostics");
+  RCLCPP_INFO_ONCE(node_->get_logger(), "getting spawner diagnostics");
 
   {
     std::scoped_lock lock(mutex_gazebo_spawner_diagnostics_);
@@ -496,17 +482,18 @@ void AutomaticStart::timerMain() {
     return;
   }
 
-  bool got_uav_manager_diag     = sh_uav_manager_diag_.hasMsg();
-  bool got_control_manager_diag = sh_control_manager_diag_.hasMsg();
-  bool got_estimation_diag      = sh_estimation_diag_.hasMsg();
-  bool got_hw_api               = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
+  bool got_uav_manager_diag         = sh_uav_manager_diag_.hasMsg();
+  bool got_control_manager_diag     = sh_control_manager_diag_.hasMsg();
+  bool got_safety_area_manager_diag = sh_safety_area_manager_diag_.hasMsg();
+  bool got_estimation_diag          = sh_estimation_diag_.hasMsg();
+  bool got_hw_api                   = sh_hw_api_status_.hasMsg() && sh_hw_api_capabilities_.hasMsg() && hw_api_connected_;
 
-  if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag) {
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 5000,
+  if (!got_control_manager_diag || !got_hw_api || !got_uav_manager_diag || !got_estimation_diag || !got_safety_area_manager_diag) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000,
                          "waiting for data: ControlManager=%s, UavManager=%s, HW "
-                         "Api=%s, EstimationManager=%s",
+                         "Api=%s, EstimationManager=%s , SafetyAreaManager=%s",
                          got_control_manager_diag ? "true" : "FALSE", got_uav_manager_diag ? "true" : "FALSE", got_hw_api ? "true" : "FALSE",
-                         got_estimation_diag ? "true" : "FALSE");
+                         got_estimation_diag ? "true" : "FALSE", got_safety_area_manager_diag ? "true" : "FALSE");
     return;
   }
 
@@ -527,11 +514,11 @@ void AutomaticStart::timerMain() {
 
     if (!offboard && possibly_in_the_air) {
 
-      RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "preflight check failed, the UAV is possibly in the air");
+      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "preflight check failed, the UAV is possibly in the air");
 
       if (armed) {
 
-        RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000,
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
                              "-- the UAV is also armed!! finishing to prevent "
                              "unwanted system activation");
 
@@ -540,7 +527,7 @@ void AutomaticStart::timerMain() {
           bool res = toggleControlOutput(false);
 
           if (!res) {
-            RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output OFF");
+            RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output OFF");
           }
         }
 
@@ -561,7 +548,7 @@ void AutomaticStart::timerMain() {
 
     // | -------------------- preflight checks -------------------- |
 
-    bool position_valid = validateReference();
+    bool position_valid = sh_safety_area_manager_diag_.getMsg()->position_valid_2d;
     bool got_topics     = topicCheck();
 
     bool can_takeoff = got_topics && position_valid;
@@ -578,7 +565,7 @@ void AutomaticStart::timerMain() {
         bool res = toggleControlOutput(true);
 
         if (!res) {
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output ON");
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON");
         } else {
           we_toggled_output_ = true;
         }
@@ -588,7 +575,7 @@ void AutomaticStart::timerMain() {
 
       if (armed_time.seconds() > 0 && time_from_arming > _control_output_timeout_) {
 
-        RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "could not set control output ON for %.2f secs, disarming", _control_output_timeout_);
         disarm();
         changeState(STATE_FINISHED);
       }
@@ -601,13 +588,13 @@ void AutomaticStart::timerMain() {
       if (got_gazebo_spawner_diagnostics) {
 
         if (!gazebo_spawner_diagnostics_.spawn_called || gazebo_spawner_diagnostics_.processing) {
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) waiting for spawner to finish spawning UAVs");
           return;
         }
 
       } else {
 
-        RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
+        RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "(simulation) missing spawner diagnostics");
         return;
       }
     }
@@ -630,7 +617,7 @@ void AutomaticStart::timerMain() {
 
           double min = (armed_time_diff < offboard_time_diff) ? armed_time_diff.seconds() : offboard_time_diff.seconds();
 
-          RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "taking off in %.0f", (_safety_timeout_ - min));
+          RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off in %.0f", (_safety_timeout_ - min));
         }
       }
     }
@@ -643,13 +630,13 @@ void AutomaticStart::timerMain() {
     // if takeoff finished
     if (control_manager_diagnostics->flying_normally) {
 
-      RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "takeoff finished");
+      RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "takeoff finished");
 
       changeState(STATE_FINISHED);
 
     } else {
 
-      RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
+      RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "waiting for the takeoff to finish");
     }
 
     break;
@@ -657,7 +644,7 @@ void AutomaticStart::timerMain() {
 
   case STATE_FINISHED: {
 
-    RCLCPP_INFO_ONCE(this_node().get_logger(), "finished");
+    RCLCPP_INFO_ONCE(node_->get_logger(), "finished");
 
     timer_main_->stop();
 
@@ -676,7 +663,7 @@ void AutomaticStart::timerMain() {
 
 void AutomaticStart::changeState(LandingStates_t new_state) {
 
-  RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state], state_names[new_state]);
+  RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "switching states %s -> %s", state_names[current_state], state_names[new_state]);
 
   switch (new_state) {
 
@@ -688,7 +675,7 @@ void AutomaticStart::changeState(LandingStates_t new_state) {
   case STATE_TAKEOFF: {
 
     if (_pre_takeoff_sleep_ > 1.0) {
-      RCLCPP_INFO(this_node().get_logger(), "sleeping for %.2f secs before takeoff", _pre_takeoff_sleep_);
+      RCLCPP_INFO(node_->get_logger(), "sleeping for %.2f secs before takeoff", _pre_takeoff_sleep_);
       clock_->sleep_for(std::chrono::duration<double>(_pre_takeoff_sleep_));
     }
 
@@ -721,7 +708,7 @@ void AutomaticStart::changeState(LandingStates_t new_state) {
 
 bool AutomaticStart::takeoff() {
 
-  RCLCPP_INFO(this_node().get_logger(), "taking off");
+  RCLCPP_INFO(node_->get_logger(), "taking off");
 
   std::shared_ptr<std_srvs::srv::Trigger::Request> request = std::make_shared<std_srvs::srv::Trigger::Request>();
 
@@ -735,47 +722,15 @@ bool AutomaticStart::takeoff() {
 
     } else {
 
-      RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "taking off failed: %s", response.value()->message.c_str());
+      RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "taking off failed: %s", response.value()->message.c_str());
     }
 
   } else {
 
-    RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "service call for taking off failed");
+    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for taking off failed");
   }
 
   return false;
-}
-
-//}
-
-/* validateReference() //{ */
-
-bool AutomaticStart::validateReference() {
-
-  std::shared_ptr<mrs_msgs::srv::ValidateReference::Request> request = std::make_shared<mrs_msgs::srv::ValidateReference::Request>();
-
-  request->reference.header.frame_id = _body_frame_name_;
-
-  auto response = service_client_validate_reference_.callSync(request);
-
-  if (response) {
-
-    if (response.value()->success) {
-
-      RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "current position is valid");
-      return true;
-
-    } else {
-
-      RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "current position is not valid (safety area, bumper)!");
-      return false;
-    }
-
-  } else {
-
-    RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "current position could not be validated");
-    return false;
-  }
 }
 
 //}
@@ -784,7 +739,7 @@ bool AutomaticStart::validateReference() {
 
 bool AutomaticStart::toggleControlOutput(const bool &value) {
 
-  RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "setting control output %s", value ? "ON" : "OFF");
+  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "setting control output %s", value ? "ON" : "OFF");
 
   std::shared_ptr<std_srvs::srv::SetBool::Request> request = std::make_shared<std_srvs::srv::SetBool::Request>();
 
@@ -800,12 +755,12 @@ bool AutomaticStart::toggleControlOutput(const bool &value) {
 
     } else {
 
-      RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "setting of control output failed: %s", response.value()->message.c_str());
+      RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "setting of control output failed: %s", response.value()->message.c_str());
     }
 
   } else {
 
-    RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "service call for toggling control output failed");
+    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for toggling control output failed");
   }
 
   return false;
@@ -819,7 +774,7 @@ bool AutomaticStart::disarm() {
 
   if (!hw_api_connected_) {
 
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "cannot disarm, missing HW API status!");
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, missing HW API status!");
 
     return false;
   }
@@ -828,12 +783,12 @@ bool AutomaticStart::disarm() {
 
   if (offboard) {
 
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "cannot disarm, already in offboard mode!");
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "cannot disarm, already in offboard mode!");
 
     return false;
   }
 
-  RCLCPP_INFO_THROTTLE(this_node().get_logger(), *clock_, 1000, "disarming");
+  RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "disarming");
 
   std::shared_ptr<std_srvs::srv::SetBool::Request> request = std::make_shared<std_srvs::srv::SetBool::Request>();
 
@@ -849,12 +804,12 @@ bool AutomaticStart::disarm() {
 
     } else {
 
-      RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "disarming failed");
+      RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "disarming failed");
     }
 
   } else {
 
-    RCLCPP_ERROR_THROTTLE(this_node().get_logger(), *clock_, 1000, "service call for disarming failed");
+    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "service call for disarming failed");
   }
 
   return false;
@@ -870,11 +825,9 @@ bool AutomaticStart::isGazeboSimulation(void) {
     return true;
   }
 
-  auto node_names = this_node().get_node_names();
-
-  for (auto &node : node_names) {
+  for (auto &node : node_->get_node_names()) {
     if (node.find("mrs_drone_spawner") != std::string::npos) {
-      RCLCPP_INFO(this_node().get_logger(), "MRS Gazebo Simulation detected");
+      RCLCPP_INFO(node_->get_logger(), "MRS Gazebo Simulation detected");
       is_gazebo_simulation_ = true;
       return true;
     }
@@ -906,7 +859,7 @@ bool AutomaticStart::topicCheck(void) {
   }
 
   if (!got_topics) {
-    RCLCPP_WARN_STREAM_THROTTLE(this_node().get_logger(), *clock_, 1000, "missing data on topics: " << missing_topics.str());
+    RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "missing data on topics: " << missing_topics.str());
   }
 
   return got_topics;
@@ -934,8 +887,7 @@ bool AutomaticStart::preflightCheckSpeed(void) {
 
   if (speed > _speed_check_max_speed_) {
     speed_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed,
-                         _speed_check_max_speed_);
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the estimated speed (%.2f ms^-2) is over the limit (%.2f ms^-2)", speed, _speed_check_max_speed_);
   }
 
   if (speed_check_violated_time_.seconds() > 0 && (clock_->now() - speed_check_violated_time_).seconds() < _preflight_check_time_window_) {
@@ -977,7 +929,7 @@ bool AutomaticStart::preflighCheckHeight(void) {
 
   if (height > _height_check_max_height_) {
     height_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000, "the height (%.2f m) is over the limit (%.2f m)", height, _height_check_max_height_);
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "the height (%.2f m) is over the limit (%.2f m)", height, _height_check_max_height_);
   }
 
   if (height_check_violated_time_.seconds() > 0 && (clock_->now() - height_check_violated_time_).seconds() < _preflight_check_time_window_) {
@@ -1019,7 +971,7 @@ bool AutomaticStart::preflighCheckGyro(void) {
 
   if (abs(gyros.x) > _gyro_check_max_rate_ || abs(gyros.y) > _gyro_check_max_rate_ || abs(gyros.z) > _gyro_check_max_rate_) {
     gyro_check_violated_time_ = clock_->now();
-    RCLCPP_WARN_THROTTLE(this_node().get_logger(), *clock_, 1000,
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
                          "the angular velocity ([%.2f, %.2f, %.2f] rad/s) is "
                          "over the limit (%.2f rad/s)",
                          gyros.x, gyros.y, gyros.z, _gyro_check_max_rate_);

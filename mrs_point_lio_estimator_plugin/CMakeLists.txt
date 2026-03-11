@@ -39,6 +39,7 @@ set(DEPENDENCIES
 
 set(LIBRARIES
   MrsPointLioEstimator_Estimator
+  MrsPointLioEstimator_Estimator2
 )
 
 foreach(DEP IN LISTS DEPENDENCIES)
@@ -55,6 +56,8 @@ include_directories(
 ## Build ##
 ###########
 
+# plugin 1
+
 add_library(MrsPointLioEstimator_Estimator SHARED
   src/point_lio_plugin.cpp
 )
@@ -64,6 +67,18 @@ ament_target_dependencies(MrsPointLioEstimator_Estimator
 )
 
 target_compile_definitions(MrsPointLioEstimator_Estimator PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
+
+# plugin 2
+
+add_library(MrsPointLioEstimator_Estimator2 SHARED
+  src/point_lio_plugin_2.cpp
+)
+
+ament_target_dependencies(MrsPointLioEstimator_Estimator2
+  ${DEPENDENCIES}
+)
+
+target_compile_definitions(MrsPointLioEstimator_Estimator2 PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
 
 ## --------------------------------------------------------------
 ## |                       export plugins                       |
