@@ -16,7 +16,7 @@
   "pages": [
     {
       "title": "Overview",
-      "purpose": "Introduce the MRS UAV System repository, summarizing at a high level what it contains and its purpose as a UAV control, estimation, and simulation platform",
+      "purpose": "Introduce the mrs_uav_system (not mrs_meta) repository, summarizing at a high level what it contains and its purpose as a UAV control, estimation, and simulation platform",
       "page_notes": [
         {
           "content": ""
