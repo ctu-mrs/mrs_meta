@@ -14,7 +14,7 @@ A meta repository of ROS2 packages for data analysis, consisted mostly of packag
 
 ## Instructions
 
-To update the subpackages remove every folder, make sure you have [gitman](https://gitman.readthedocs.io/en/latest/) and run:
+To update the subpackages remove every non hidden folder, make sure you have [gitman](https://gitman.readthedocs.io/en/latest/) and run:
 
 ```bash
 gitman install
