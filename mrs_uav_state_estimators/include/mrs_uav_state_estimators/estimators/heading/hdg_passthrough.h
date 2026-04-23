@@ -13,6 +13,8 @@
 #include <mrs_lib/subscriber_handler.h>
 #include <mrs_lib/geometry/cyclic.h>
 
+#include <mrs_lib/errorgraph/error_publisher.h>
+
 #include <mrs_uav_state_estimators/estimators/heading/heading_estimator.h>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -61,6 +63,13 @@ private:
   mutable std::mutex mtx_innovation_;
 
   const bool is_core_plugin_;
+
+  enum class error_type_t : uint16_t
+  {
+    not_in_ready_state,
+  };
+
+  std::unique_ptr<mrs_lib::errorgraph::ErrorPublisher> error_publisher_;
 
   std::string                                                       orient_topic_;
   mrs_lib::SubscriberHandler<geometry_msgs::msg::QuaternionStamped> sh_orientation_;

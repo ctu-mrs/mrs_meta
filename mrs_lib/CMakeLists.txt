@@ -28,11 +28,11 @@ if(ENABLE_COVERAGE)
 endif()
 
 find_package(ament_cmake_python REQUIRED)
+find_package(mrs_cmake REQUIRED)
 
 set(DEPENDENCIES
   geometry_msgs
   mrs_msgs
-  mrs_cmake
   nav_msgs
   # pcl_conversions
   # pcl_msgs
@@ -79,6 +79,9 @@ target_sources(mrs_lib_mrs_lib
     "src/coro/internal/thread_local_continuation_scheduler.cpp"
     # src/dynparam_mgr
     "src/dynparam_mgr/dynparam_mgr.cpp"
+    # src/errorgraph
+    "src/errorgraph/errorgraph.cpp"
+    "src/errorgraph/error_publisher.cpp"
     # src/geometry
     "src/geometry/conversions.cpp"
     "src/geometry/cyclic.cpp"
@@ -164,6 +167,10 @@ target_sources(mrs_lib_mrs_lib
     # include/mrs_lib/coro/internal
     "include/mrs_lib/coro/internal/attributes.hpp"
     "include/mrs_lib/coro/internal/thread_local_continuation_scheduler.hpp"
+    # include/mrs_lib/errorgraph
+    "include/mrs_lib/errorgraph/node_id.h"
+    "include/mrs_lib/errorgraph/errorgraph.h"
+    "include/mrs_lib/errorgraph/error_publisher.h"
     # include/mrs_lib/geometry
     "include/mrs_lib/geometry/conversions_eigen.h"
     "include/mrs_lib/geometry/conversions.h"
@@ -211,7 +218,7 @@ target_link_libraries(mrs_lib_mrs_lib
 # Dynamic param manager tests
 
 add_executable(dynparam_tests
-  src/dynparam_mgr/dynparam_tests.cpp
+  examples/dynparam_mgr/dynparam_tests.cpp
 )
 
 target_link_libraries(dynparam_tests
@@ -224,7 +231,7 @@ target_link_libraries(dynparam_tests
 
 # TODO why is it built from all these different files?
 add_executable(subscribe_handler_example
-  src/subscriber_handler/example.cpp
+  examples/subscriber_handler/example.cpp
   src/timeout_manager/timeout_manager.cpp
   src/timer_handler/timer_handler.cpp
 )

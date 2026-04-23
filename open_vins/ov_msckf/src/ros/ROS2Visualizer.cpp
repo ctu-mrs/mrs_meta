@@ -125,6 +125,7 @@ ROS2Visualizer::ROS2Visualizer(std::shared_ptr<rclcpp::Node> node, std::shared_p
   if (node->has_parameter("save_total_state")) {
     node->get_parameter<bool>("save_total_state", save_total_state);
   }
+
   if (save_total_state) {
 
     // files we will open
@@ -313,12 +314,14 @@ void ROS2Visualizer::visualize() {
   // rT0_1 = boost::posix_time::microsec_clock::local_time();
 
   // publish current image (only if not multi-threaded)
-  if (!_app->get_params().use_multi_threading_pubs)
+  if (!_app->get_params().use_multi_threading_pubs) {
     publish_images();
+  }
 
   // Return if we have not inited
-  if (!_app->initialized())
+  if (!_app->initialized()) {
     return;
+  }
 
   // Save the start time of this dataset
   if (!start_time_set) {
@@ -463,22 +466,21 @@ void ROS2Visualizer::visualize_odometry(double timestamp) {
 void ROS2Visualizer::publish_state(double timestamp) {
 
   // Return if we have not inited and a second has passes
-  if (!_app->initialized() || (timestamp - _app->initialized_time()) < 1)
+  if (!_app->initialized() || (timestamp - _app->initialized_time()) < 1) {
     return;
+  }
 
   // Get fast propagate state at the desired timestamp
   std::shared_ptr<State> state = _app->get_state();
 
   auto msg = std_msgs::msg::Float64MultiArray();
-  msg.data.resize(19);
+  msg.data.resize(20);
 
-  // 1. Timestamp (from the State class member)
   msg.data[0] = state->_timestamp;
 
-  // 2. Get the IMU pointer (from State.h)
   auto imu = state->_imu;
 
-  // 4. Extract 4x1 Quaternion (Orientation)
+  // Extract 4x1 Quaternion (Orientation)
   // The quat() method returns Eigen::Matrix<double, 4, 1>
   Eigen::Vector4d q = imu->quat();
 
@@ -487,41 +489,45 @@ void ROS2Visualizer::publish_state(double timestamp) {
   msg.data[3] = q(2); // y
   msg.data[4] = q(3); // z
 
-  // 5. Extract 3x1 Position
+  // Extract 3x1 Position
   Eigen::Vector3d p = imu->pos();
   msg.data[5] = p(0);
   msg.data[6] = p(1);
   msg.data[7] = p(2);
 
-  // 6. Extract 3x1 Velocity
+  // Extract 3x1 Velocity
   Eigen::Vector3d v = imu->vel();
   msg.data[8] = v(0);
   msg.data[9] = v(1);
   msg.data[10] = v(2);
 
-  // 7. Extract 3x1 Gyroscope Bias
+  // Extract 3x1 Gyroscope Bias
   Eigen::Vector3d bg = imu->bias_g();
   msg.data[11] = bg(0);
   msg.data[12] = bg(1);
   msg.data[13] = bg(2);
 
-  // 8. Extract 3x1 Accelerometer Bias
+  // Extract 3x1 Accelerometer Bias
   Eigen::Vector3d ba = imu->bias_a();
   msg.data[14] = ba(0);
   msg.data[15] = ba(1);
   msg.data[16] = ba(2);
 
-  std::vector<Eigen::Vector3d> feats = _app->get_features_SLAM();
+  std::vector<Eigen::Vector3d> feats_slam = _app->get_features_SLAM();
 
-  // 2. Check Covariance Divergence (The "Uncertainty" check)
+  std::vector<Eigen::Vector3d> feats_msckf = _app->get_good_features_MSCKF();
+
+  msg.data[17] = feats_slam.size();
+
+  msg.data[18] = feats_msckf.size();
+
+  // Check Covariance Divergence (The "Uncertainty" check)
   // Find the position indices in the covariance matrix
   int p_id = state->_imu->pose()->p()->id();
 
   double pos_var = state->getCov()(p_id, p_id) + state->getCov()(p_id + 1, p_id + 1) + state->getCov()(p_id + 2, p_id + 2);
 
-  msg.data[17] = feats.size();
-
-  msg.data[18] = pos_var;
+  msg.data[19] = pos_var;
 
   // Now publish msg to the other instance
   pub_state->publish(msg);
@@ -641,7 +647,9 @@ void ROS2Visualizer::callback_inertial(const sensor_msgs::msg::Imu::SharedPtr ms
   // The visualization of the state, images, and features will be synchronous with the update!
   if (thread_update_running)
     return;
+
   thread_update_running = true;
+
   std::thread thread([&] {
     // Lock on the queue (prevents new images from appending)
     std::lock_guard<std::mutex> lck(camera_queue_mtx);
@@ -892,17 +900,17 @@ void ROS2Visualizer::publish_features() {
 
   // Get our good MSCKF features
   std::vector<Eigen::Vector3d> feats_msckf = _app->get_good_features_MSCKF();
-  sensor_msgs::msg::PointCloud2 cloud = ROSVisualizerHelper::get_ros_pointcloud(_node, feats_msckf);
+  sensor_msgs::msg::PointCloud2 cloud = ROSVisualizerHelper::get_ros_pointcloud(_node, feats_msckf, global_frame_name_);
   pub_points_msckf->publish(cloud);
 
   // Get our good SLAM features
   std::vector<Eigen::Vector3d> feats_slam = _app->get_features_SLAM();
-  sensor_msgs::msg::PointCloud2 cloud_SLAM = ROSVisualizerHelper::get_ros_pointcloud(_node, feats_slam);
+  sensor_msgs::msg::PointCloud2 cloud_SLAM = ROSVisualizerHelper::get_ros_pointcloud(_node, feats_slam, global_frame_name_);
   pub_points_slam->publish(cloud_SLAM);
 
   // Get our good ARUCO features
   std::vector<Eigen::Vector3d> feats_aruco = _app->get_features_ARUCO();
-  sensor_msgs::msg::PointCloud2 cloud_ARUCO = ROSVisualizerHelper::get_ros_pointcloud(_node, feats_aruco);
+  sensor_msgs::msg::PointCloud2 cloud_ARUCO = ROSVisualizerHelper::get_ros_pointcloud(_node, feats_aruco, global_frame_name_);
   pub_points_aruco->publish(cloud_ARUCO);
 
   // Skip the rest of we are not doing simulation
@@ -911,7 +919,7 @@ void ROS2Visualizer::publish_features() {
 
   // Get our good SIMULATION features
   std::vector<Eigen::Vector3d> feats_sim = _sim->get_map_vec();
-  sensor_msgs::msg::PointCloud2 cloud_SIM = ROSVisualizerHelper::get_ros_pointcloud(_node, feats_sim);
+  sensor_msgs::msg::PointCloud2 cloud_SIM = ROSVisualizerHelper::get_ros_pointcloud(_node, feats_sim, global_frame_name_);
   pub_points_sim->publish(cloud_SIM);
 }
 

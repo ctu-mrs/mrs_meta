@@ -43,6 +43,7 @@
 #include <mrs_msgs/srv/validate_path_to_point_srv.hpp>
 
 #include <mrs_lib/safety_zone/static_edges_visualization.h>
+#include <mrs_lib/errorgraph/error_publisher.h>
 
 //}
 
@@ -94,9 +95,11 @@ private:
   struct VisualizationComponents
   {
     std::vector<std::unique_ptr<mrs_lib::StaticEdgesVisualization>> static_edges;
+    bool                                                            initialized = false;
 
     void safeCleanup() {
       static_edges.clear();
+      initialized = false;
     }
   };
 
@@ -220,7 +223,7 @@ private:
   std::unique_ptr<mrs_lib::safety_zone::Prism> makePrism(const std::vector<mrs_msgs::msg::Point2D> &points, const double max_z, const double min_z,
                                                          const std::string &horizontal_frame, const std::string &vertical_frame);
   // Transform prism
-  mrs_lib::safety_zone::Prism transformPrism(mrs_lib::safety_zone::Prism &prism, const std::string &target_frame);
+  std::optional<mrs_lib::safety_zone::Prism> transformPrism(const mrs_lib::safety_zone::Prism &prism, const std::string &target_frame);
 
   std::tuple<bool, std::vector<mrs_lib::safety_zone::Point2d>> transformPoints(const std::vector<mrs_lib::safety_zone::Point2d> &points,
                                                                                const std::string &from_frame, const std::string &target_frame);
@@ -242,6 +245,10 @@ private:
   double getMaxZ();
   double getMinZ();
 
+  // | -------------------- error publisher --------------------- |
+
+  std::unique_ptr<mrs_lib::errorgraph::ErrorPublisher> error_publisher_;
+
 }; // class SafetyAreaManager
 
 //}
@@ -252,6 +259,8 @@ SafetyAreaManager::SafetyAreaManager(rclcpp::NodeOptions options) : mrs_lib::Nod
 
   node_  = this_node_ptr();
   clock_ = node_->get_clock();
+
+  error_publisher_ = std::make_unique<mrs_lib::errorgraph::ErrorPublisher>(node_, clock_, "SafetyAreaManager", "main");
 
   mrs_lib::ParamLoader param_loader(node_, "SafetyAreaManager");
   param_loader.loadParam("uav_name", _uav_name_);
@@ -304,31 +313,31 @@ void SafetyAreaManager::initialize() {
   if (custom_config_path != "") {
     if (!param_loader.addYamlFile(custom_config_path)) {
       RCLCPP_ERROR(node_->get_logger(), "failed to load custom_config");
-      rclcpp::shutdown();
-      exit(1);
+      error_publisher_->addOneshotError("Failed to load custom_config.");
+      error_publisher_->flushAndShutdown();
     }
   }
 
   if (platform_config_path != "") {
     if (!param_loader.addYamlFile(platform_config_path)) {
       RCLCPP_ERROR(node_->get_logger(), "failed to load platform_config");
-      rclcpp::shutdown();
-      exit(1);
+      error_publisher_->addOneshotError("Failed to load platform_config.");
+      error_publisher_->flushAndShutdown();
     }
   }
 
   if (_world_config_ != "") {
     if (!param_loader.addYamlFile(_world_config_)) {
       RCLCPP_ERROR(node_->get_logger(), "failed to load world_config");
-      rclcpp::shutdown();
-      exit(1);
+      error_publisher_->addOneshotError("Failed to load world_config.");
+      error_publisher_->flushAndShutdown();
     }
   }
 
   if (!param_loader.addYamlFileFromParam("private_config")) {
     RCLCPP_ERROR(node_->get_logger(), "failed to load private_config");
-    rclcpp::shutdown();
-    exit(1);
+    error_publisher_->addOneshotError("Failed to load private_config.");
+    error_publisher_->flushAndShutdown();
   }
 
   param_loader.loadParam("uav_name", _uav_name_);
@@ -349,8 +358,8 @@ void SafetyAreaManager::initialize() {
 
   if (!param_loader.loadedSuccessfully()) {
     RCLCPP_ERROR(node_->get_logger(), "could not load all parameters!");
-    rclcpp::shutdown();
-    exit(1);
+    error_publisher_->addOneshotError("Could not load all parameters.");
+    error_publisher_->flushAndShutdown();
   }
 
   param_loader.setPrefix("");
@@ -361,8 +370,8 @@ void SafetyAreaManager::initialize() {
 
   if (!success) {
     RCLCPP_ERROR(node_->get_logger(), "Failed to initialize safety area from file");
-    rclcpp::shutdown();
-    exit(1);
+    error_publisher_->addOneshotError("Failed to initialize safety area from file.");
+    error_publisher_->flushAndShutdown();
   }
 
   // | ----------------------- publishers ----------------------- |
@@ -520,6 +529,7 @@ void SafetyAreaManager::timerPrerequisites() {
 
   if (!got_hw_api_capabilities) {
     RCLCPP_WARN(node_->get_logger(), "waiting for data: HW Api=%s", got_hw_api_capabilities ? " TRUE " : " FALSE ");
+    error_publisher_->addWaitingForNodeError({"HwApiManager", "main"});
     return;
   }
 
@@ -545,7 +555,47 @@ void SafetyAreaManager::timerStatus() {
 
   if (!got_odom) {
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 5000, "waiting for data: Odometry=%s", got_odom ? "true" : "FALSE");
+    error_publisher_->addWaitingForNodeError({"EstimationManager", "main"});
     return;
+  }
+
+  // RViz Visualizations, only once we have the safety zone defined and there is a transform available to the local_origin frame.
+  {
+    std::scoped_lock lock(mutex_safety_area_);
+    if (safety_zone_handler_.safety_zone && !safety_zone_handler_.visualization_components.initialized) {
+      bool all_transforms_done = true;
+
+      // Transform prism to local_origin frame for visualization
+      auto border_prism      = safety_zone_handler_.safety_zone->getBorder();
+      auto transformed_prism = transformPrism(border_prism, "local_origin");
+
+      if (!transformed_prism) {
+        all_transforms_done = false;
+      } else {
+        safety_zone_handler_.visualization_components.static_edges.push_back(
+            std::make_unique<mrs_lib::StaticEdgesVisualization>(transformed_prism.value(), _uav_name_, "local_origin", node_, 2));
+
+        // Obstacles if safety zone is already defined and transformed successfully
+        const auto &obstacles = safety_zone_handler_.safety_zone->getObstacles();
+        for (const auto &[id, obstacle_ptr] : obstacles) {
+          // Transform obstacle prism to local_origin frame
+          auto transformed_obstacle_prism = transformPrism(*obstacle_ptr, "local_origin");
+
+          if (!transformed_obstacle_prism) {
+            all_transforms_done = false;
+            break;
+          }
+          safety_zone_handler_.visualization_components.static_edges.push_back(
+              std::make_unique<mrs_lib::StaticEdgesVisualization>(transformed_obstacle_prism.value(), _uav_name_, "local_origin", node_, 2));
+        }
+      }
+
+      if (all_transforms_done) {
+        safety_zone_handler_.visualization_components.initialized = true;
+      } else {
+        safety_zone_handler_.visualization_components.safeCleanup();
+      }
+    }
   }
 
   auto current_border = safety_zone_handler_.safety_zone->getBorder();
@@ -594,6 +644,7 @@ void SafetyAreaManager::timerStatus() {
       safety_zone_handler_ = std::move(*new_safety_zone);
     } else {
       RCLCPP_ERROR(node_->get_logger(), "Failed to update safety area after world origin change.");
+      error_publisher_->addOneshotError("Failed to update safety area after world origin change.");
     }
 
     world_origin_changed_ = false;
@@ -784,6 +835,7 @@ bool SafetyAreaManager::callbackSetSafetyBorder(const std::shared_ptr<mrs_msgs::
 
   if (!sh_control_manager_diag_.hasMsg()) {
     RCLCPP_WARN(node_->get_logger(), "No control manager diagnostics received yet.");
+    error_publisher_->addWaitingForNodeError({"ControlManager", "main"});
     response->message = "No control manager diagnostics received yet.";
     response->success = false;
     return true;
@@ -804,6 +856,7 @@ bool SafetyAreaManager::callbackSetSafetyBorder(const std::shared_ptr<mrs_msgs::
 
   if (!success) {
     RCLCPP_WARN(node_->get_logger(), "Failed to set safety border.");
+    error_publisher_->addOneshotError("Failed to set safety border.");
     response->message = "Failed to set border";
     response->success = false;
     return true;
@@ -1138,8 +1191,8 @@ bool SafetyAreaManager::initializationFromFile(mrs_lib::ParamLoader &param_loade
 
   if (!param_loader.loadedSuccessfully()) {
     RCLCPP_ERROR(node_->get_logger(), "could not load world config parameters!");
-    rclcpp::shutdown();
-    exit(1);
+    error_publisher_->addOneshotError("Could not load world config parameters.");
+    error_publisher_->flushAndShutdown();
   }
 
   // Make border prism
@@ -1217,6 +1270,7 @@ bool SafetyAreaManager::initializationFromFile(mrs_lib::ParamLoader &param_loade
 
   if (!new_safety_zone) {
     RCLCPP_WARN(node_->get_logger(), "Failed to create new safety zone.");
+    error_publisher_->addOneshotError("Failed to create new safety zone from file.");
     return false;
   }
 
@@ -1278,6 +1332,7 @@ bool SafetyAreaManager::initializationFromMsg(const mrs_msgs::msg::Prism &prism_
 
   if (!new_safety_zone) {
     RCLCPP_WARN(node_->get_logger(), "Failed to create new safety zone.");
+    error_publisher_->addOneshotError("Failed to create new safety zone from message.");
     return false;
   }
 
@@ -1301,23 +1356,6 @@ SafetyAreaManager::createSafetyZone(std::unique_ptr<mrs_lib::safety_zone::Prism>
 
   if (!safety_zone_handler.safety_zone) {
     return std::nullopt;
-  }
-
-  // Transform prism to local_origin frame for visualization
-  auto border_prism      = safety_zone_handler.safety_zone->getBorder();
-  auto transformed_prism = transformPrism(border_prism, "local_origin");
-
-  // RViz Visualizations
-  safety_zone_handler.visualization_components.static_edges.push_back(
-      std::make_unique<mrs_lib::StaticEdgesVisualization>(transformed_prism, _uav_name_, "local_origin", node_, 2));
-
-  /* // Obstacles, overloading for obstacles */
-  const auto &obstacles = safety_zone_handler.safety_zone->getObstacles();
-  for (const auto &[id, obstacle_ptr] : obstacles) {
-    // Transform obstacle prism to local_origin frame
-    auto transformed_obstacle_prism = transformPrism(*obstacle_ptr, "local_origin");
-    safety_zone_handler.visualization_components.static_edges.push_back(
-        std::make_unique<mrs_lib::StaticEdgesVisualization>(transformed_obstacle_prism, _uav_name_, "local_origin", node_, 2));
   }
 
   // Copy parameters from previous safety zone if exists
@@ -1397,7 +1435,7 @@ std::unique_ptr<mrs_lib::safety_zone::Prism> SafetyAreaManager::makePrism(const 
 
 /* transformPrism() //{ */
 
-mrs_lib::safety_zone::Prism SafetyAreaManager::transformPrism(mrs_lib::safety_zone::Prism &prism, const std::string &target_frame) {
+std::optional<mrs_lib::safety_zone::Prism> SafetyAreaManager::transformPrism(const mrs_lib::safety_zone::Prism &prism, const std::string &target_frame) {
 
   auto border_points                        = prism.getPoints();
   auto [success, transformed_border_points] = transformPoints(border_points, prism.getHorizontalFrame(), target_frame);
@@ -1406,8 +1444,8 @@ mrs_lib::safety_zone::Prism SafetyAreaManager::transformPrism(mrs_lib::safety_zo
   auto [z_success_min, transformed_min_z] = transformZ(prism.getVerticalFrame(), target_frame, prism.getMinZ());
 
   if (!success || !z_success_max || !z_success_min) {
-    RCLCPP_WARN(node_->get_logger(), "Failed to transform safety border points to %s frame.", target_frame.c_str());
-    return prism;
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "Failed to transform safety zone points to %s frame. Will retry later.", target_frame.c_str());
+    return std::nullopt;
   }
 
   return mrs_lib::safety_zone::Prism(transformed_border_points, transformed_max_z, transformed_min_z, target_frame, target_frame);
@@ -1512,8 +1550,19 @@ bool SafetyAreaManager::isPointInSafetyArea3d(const mrs_msgs::msg::ReferenceStam
     return false;
   }
 
-  if (!safety_zone_handler_.safety_zone->isPointValid(tfed_horizontal->reference.position.x, tfed_horizontal->reference.position.y,
-                                                      tfed_horizontal->reference.position.z)) {
+  // Transform Z coordinate to vertical frame since it may be different from horizontal frame
+  std::string vertical_frame                = safety_zone_handler_.safety_zone->getBorder().getVerticalFrame();
+  auto [z_transform_success, z_transformed] = transformZ(point.header.frame_id, vertical_frame, point.reference.position.z);
+
+  if (!z_transform_success) {
+    RCLCPP_DEBUG(node_->get_logger(),
+                 "SafetyAreaManager: failed to transform Z from frame '%s' to safety area vertical frame '%s'; "
+                 "rejecting point as outside safety area.",
+                 point.header.frame_id.c_str(), vertical_frame.c_str());
+    return false;
+  }
+
+  if (!safety_zone_handler_.safety_zone->isPointValid(tfed_horizontal->reference.position.x, tfed_horizontal->reference.position.y, z_transformed)) {
     return false;
   }
 
@@ -1602,7 +1651,8 @@ bool SafetyAreaManager::isPathToPointInSafetyArea3d(const mrs_msgs::msg::Referen
 
   auto border = safety_zone_handler_.safety_zone->getBorder();
 
-  std::string border_frame = border.getHorizontalFrame();
+  std::string border_frame   = border.getHorizontalFrame();
+  std::string vertical_frame = border.getVerticalFrame();
 
   {
     auto ret = transformer_->transformSingle(start, border_frame);
@@ -1626,14 +1676,25 @@ bool SafetyAreaManager::isPathToPointInSafetyArea3d(const mrs_msgs::msg::Referen
     end_transformed = ret.value();
   }
 
+  // Transform Z coordinates to the border's vertical frame (may differ from horizontal frame)
+  auto [start_z_success, start_z] = transformZ(start.header.frame_id, vertical_frame, start.reference.position.z);
+  auto [end_z_success, end_z]     = transformZ(end.header.frame_id, vertical_frame, end.reference.position.z);
+  if (!start_z_success || !end_z_success) {
+    RCLCPP_DEBUG(node_->get_logger(),
+                 "SafetyAreaManager: failed to transform Z from frames '%s' or '%s' to safety area vertical frame '%s'; "
+                 "rejecting path as outside safety area.",
+                 start.header.frame_id.c_str(), end.header.frame_id.c_str(), vertical_frame.c_str());
+    return false;
+  }
+
   // verify the whole path
   mrs_lib::safety_zone::Point3d start_point, end_point;
   start_point.set<0>(start_transformed.reference.position.x);
   start_point.set<1>(start_transformed.reference.position.y);
-  start_point.set<2>(start_transformed.reference.position.z);
+  start_point.set<2>(start_z);
   end_point.set<0>(end_transformed.reference.position.x);
   end_point.set<1>(end_transformed.reference.position.y);
-  end_point.set<2>(end_transformed.reference.position.z);
+  end_point.set<2>(end_z);
 
   return safety_zone_handler_.safety_zone->isPathValid(start_point, end_point);
 }

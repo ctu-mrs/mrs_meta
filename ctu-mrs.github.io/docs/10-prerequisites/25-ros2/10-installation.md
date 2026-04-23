@@ -37,7 +37,8 @@ If you don't want to run ROS natively, you can run it in a container with the VS
 ```bash
 rosker() {
   local name="${1:-jazzy}"
-  shift
+  local image="ctumrs/ros_$name:latest"
+  shift || true
 
   if docker ps -a --format '{{.Names}}' | grep -xq "$name"; then
     if docker ps --format '{{.Names}}' | grep -xq "$name"; then
@@ -46,12 +47,18 @@ rosker() {
       docker start -ai "$name"
     fi
   else
+    echo "FROM $image
+      RUN userdel ubuntu || true && \
+        useradd -u $(id -u) -d /root ubuntu && \
+        echo 'ubuntu ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/ubuntu
+    " | docker build -qt "${image}_modified" - && \
+
     docker run -it --name "$name" --network=host --privileged -e DISPLAY \
-      -w "/root" \
+      -u ubuntu -w /root \
       -v "$HOME:/root" \
-      -v "/dev:/dev" \
-      -v "/etc/hosts:/etc/hosts" \
-      "ctumrs/ros_$name:latest" bash
+      -v /dev:/dev \
+      -v /etc/hosts:/etc/hosts \
+      "${image}_modified" bash
   fi
 }
 ```

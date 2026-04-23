@@ -9,6 +9,7 @@
 /* #include <mrs_modules_msgs/Bestpos.h> */
 
 #include <nav_msgs/msg/odometry.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/attitude_converter.h>
@@ -16,7 +17,10 @@
 #include <mrs_lib/publisher_handler.h>
 #include <mrs_lib/subscriber_handler.h>
 #include <mrs_lib/service_client_handler.h>
+#include <mrs_lib/service_server_handler.h>
 #include <mrs_lib/gps_conversions.h>
+#include <mrs_lib/geometry/cyclic.h>
+#include <mrs_lib/errorgraph/error_publisher.h>
 
 #include <std_msgs/msg/float64.hpp>
 
@@ -65,7 +69,7 @@ class MrsUavPx4Api : public mrs_uav_hw_api::MrsUavHwApi {
 public:
   ~MrsUavPx4Api(){};
 
-  void initialize(const rclcpp::Node::SharedPtr& node, std::shared_ptr<mrs_uav_hw_api::CommonHandlers_t> common_handlers);
+  void initialize(const rclcpp::Node::SharedPtr &node, std::shared_ptr<mrs_uav_hw_api::CommonHandlers_t> common_handlers);
 
   void destroy();
 
@@ -73,6 +77,7 @@ public:
   rclcpp::Clock::SharedPtr clock_;
 
   rclcpp::CallbackGroup::SharedPtr callback_group_;
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_ss_;
 
   // | --------------------- status methods --------------------- |
 
@@ -95,11 +100,24 @@ public:
 
   // | -------------------- service callbacks ------------------- |
 
-  std::tuple<bool, std::string> callbackArming(const bool& request);
+  std::tuple<bool, std::string> callbackArming(const bool &request);
   std::tuple<bool, std::string> callbackOffboard(void);
 
 private:
   bool is_initialized_ = false;
+
+  // | -------------------- errorgraph ------------------- |
+  enum class error_type_t : uint16_t
+  {
+    not_receiving_mavros_state,
+    not_receiving_ground_truth,
+    not_receiving_rtk,
+    not_receiving_gps,
+    not_receiving_distance_sensor,
+    not_receiving_imu,
+  };
+
+  std::shared_ptr<mrs_lib::errorgraph::ErrorPublisher> error_publisher_;
 
   std::shared_ptr<mrs_uav_hw_api::CommonHandlers_t> common_handlers_;
 
@@ -115,7 +133,9 @@ private:
   std::string _world_frame_name_;
 
   double _mavros_timeout_;
-  double _mavros_passable_delay_;
+  // Needs a default value
+  rclcpp::Duration _general_topic_timeout_ = rclcpp::Duration::from_seconds(1);
+  double           _mavros_passable_delay_;
 
   bool _simulation_;
 
@@ -130,12 +150,15 @@ private:
   double _ref_lon;
   double _ref_utm_x;
   double _ref_utm_y;
-  bool _ref_latlon_init = false;
+  bool   _ref_latlon_init = false;
 
   // | --------------------- service clients -------------------- |
 
   mrs_lib::ServiceClientHandler<mavros_msgs::srv::CommandLong> sch_mavros_command_long_;
   mrs_lib::ServiceClientHandler<mavros_msgs::srv::SetMode>     sch_mavros_mode_;
+
+  // | --------------------- service servers -------------------- |
+  mrs_lib::ServiceServerHandler<std_srvs::srv::SetBool> ssh_ignore_ground_truth_;
 
   // | ----------------------- subscribers ---------------------- |
 
@@ -167,11 +190,14 @@ private:
   void callbackAltitude(const mavros_msgs::msg::Altitude::ConstSharedPtr msg);
   void callbackGpsStatusRaw(const mavros_msgs::msg::GPSRAW::ConstSharedPtr msg);
   void callbackBattery(const sensor_msgs::msg::BatteryState::ConstSharedPtr msg);
+  bool callbackIgnoreGroundTruth(const std_srvs::srv::SetBool::Request::SharedPtr request, std_srvs::srv::SetBool::Response::SharedPtr response);
   /* void                                                 callbackRTK(const mrs_modules_msgs::msg::Bestpos::ConstSharedPtr msg); */
 
   void timeoutMavrosState(void);
+  void timeoutGeneralTopic(const std::string &topic_name, const rclcpp::Time &last_msg_time, const error_type_t &error_type,
+                           const std::string &error_description);
 
-  double RCChannelToRange(const double& rc_value);
+  double RCChannelToRange(const double &rc_value);
 
   // | ----------------------- publishers ----------------------- |
 
@@ -181,6 +207,7 @@ private:
   // | ------------------------- timers ------------------------- |
 
   std::shared_ptr<TimerType> timer_main_;
+  std::shared_ptr<TimerType> timer_topic_check_;
 
   void timerMain();
 
@@ -191,6 +218,24 @@ private:
   std::atomic<bool> armed_     = false;
   std::atomic<bool> connected_ = false;
   std::mutex        mutex_status_;
+
+  std::mutex                     mutex_orientation_;
+  geometry_msgs::msg::Quaternion orientation_;
+  std::mutex                     mutex_angular_velocity_;
+  geometry_msgs::msg::Vector3    angular_velocity_;
+
+  template <class SubscriberHandler_T, typename CbkMsg_T, typename CbkTim_T>
+  static void init_subscriber_handler(MrsUavPx4Api *this_ptr, SubscriberHandler_T &subscriber_handler, const mrs_lib::SubscriberHandlerOptions &options,
+                                      const std::string &topic, CbkMsg_T cbk_msg, CbkTim_T cbk_tim, error_type_t error_type, const std::string &error_msg) {
+    const typename SubscriberHandler_T::message_callback_t message_callback = [this_ptr, cbk_msg](const auto &msg) { (this_ptr->*cbk_msg)(msg); };
+
+    const typename SubscriberHandler_T::timeout_callback_t timeout_callback = [this_ptr, cbk_tim, error_type, error_msg](const auto &topic_name,
+                                                                                                                         const auto &last_message) {
+      (this_ptr->*cbk_tim)(topic_name, last_message, error_type, error_msg);
+    };
+
+    subscriber_handler = SubscriberHandler_T(options, topic, timeout_callback, message_callback);
+  }
 };
 
 //}
@@ -201,7 +246,7 @@ private:
 
 /* initialize() //{ */
 
-void MrsUavPx4Api::initialize(const rclcpp::Node::SharedPtr& node, std::shared_ptr<mrs_uav_hw_api::CommonHandlers_t> common_handlers) {
+void MrsUavPx4Api::initialize(const rclcpp::Node::SharedPtr &node, std::shared_ptr<mrs_uav_hw_api::CommonHandlers_t> common_handlers) {
 
   node_            = node;
   clock_           = node_->get_clock();
@@ -214,8 +259,11 @@ void MrsUavPx4Api::initialize(const rclcpp::Node::SharedPtr& node, std::shared_p
   _capabilities_.api_name = "Px4Api";
 
   callback_group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  cbkgrp_ss_      = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
   last_mavros_state_time_ = rclcpp::Time(0, 0, clock_->get_clock_type());
+
+  error_publisher_ = std::make_shared<mrs_lib::errorgraph::ErrorPublisher>(node_, clock_, "HwApiManager", "Px4Api");
 
   // | ------------------- loading parameters ------------------- |
 
@@ -228,8 +276,8 @@ void MrsUavPx4Api::initialize(const rclcpp::Node::SharedPtr& node, std::shared_p
 
   if (!common_handlers_->main_param_loader->loadedSuccessfully()) {
     RCLCPP_ERROR(node_->get_logger(), "Could not load all parameters!");
-    rclcpp::shutdown();
-    exit(1);
+    error_publisher_->addOneshotError("Could not load all parameters!");
+    error_publisher_->flushAndShutdown();
   }
 
   for (auto config_file : config_files) {
@@ -245,26 +293,26 @@ void MrsUavPx4Api::initialize(const rclcpp::Node::SharedPtr& node, std::shared_p
   local_param_loader.loadParam("gnss/utm_zone", _sim_rtk_utm_zone_);
   local_param_loader.loadParam("gnss/amsl", _sim_rtk_amsl_);
 
-  local_param_loader.loadParam("input_mode/control_group", (bool&)_capabilities_.accepts_control_group_cmd);
-  local_param_loader.loadParam("input_mode/attitude_rate", (bool&)_capabilities_.accepts_attitude_rate_cmd);
-  local_param_loader.loadParam("input_mode/attitude", (bool&)_capabilities_.accepts_attitude_cmd);
+  local_param_loader.loadParam("input_mode/control_group", (bool &)_capabilities_.accepts_control_group_cmd);
+  local_param_loader.loadParam("input_mode/attitude_rate", (bool &)_capabilities_.accepts_attitude_rate_cmd);
+  local_param_loader.loadParam("input_mode/attitude", (bool &)_capabilities_.accepts_attitude_cmd);
 
-  local_param_loader.loadParam("outputs/distance_sensor", (bool&)_capabilities_.produces_distance_sensor);
-  local_param_loader.loadParam("outputs/gnss", (bool&)_capabilities_.produces_gnss);
-  local_param_loader.loadParam("outputs/gnss_status", (bool&)_capabilities_.produces_gnss_status);
-  local_param_loader.loadParam("outputs/rtk", (bool&)_capabilities_.produces_rtk);
-  local_param_loader.loadParam("outputs/ground_truth", (bool&)_capabilities_.produces_ground_truth);
-  local_param_loader.loadParam("outputs/imu", (bool&)_capabilities_.produces_imu);
-  local_param_loader.loadParam("outputs/altitude", (bool&)_capabilities_.produces_altitude);
-  local_param_loader.loadParam("outputs/magnetometer_heading", (bool&)_capabilities_.produces_magnetometer_heading);
-  local_param_loader.loadParam("outputs/magnetic_field", (bool&)_capabilities_.produces_magnetic_field);
-  local_param_loader.loadParam("outputs/rc_channels", (bool&)_capabilities_.produces_rc_channels);
-  local_param_loader.loadParam("outputs/battery_state", (bool&)_capabilities_.produces_battery_state);
-  local_param_loader.loadParam("outputs/position", (bool&)_capabilities_.produces_position);
-  local_param_loader.loadParam("outputs/orientation", (bool&)_capabilities_.produces_orientation);
-  local_param_loader.loadParam("outputs/velocity", (bool&)_capabilities_.produces_velocity);
-  local_param_loader.loadParam("outputs/angular_velocity", (bool&)_capabilities_.produces_angular_velocity);
-  local_param_loader.loadParam("outputs/odometry", (bool&)_capabilities_.produces_odometry);
+  local_param_loader.loadParam("outputs/distance_sensor", (bool &)_capabilities_.produces_distance_sensor);
+  local_param_loader.loadParam("outputs/gnss", (bool &)_capabilities_.produces_gnss);
+  local_param_loader.loadParam("outputs/gnss_status", (bool &)_capabilities_.produces_gnss_status);
+  local_param_loader.loadParam("outputs/rtk", (bool &)_capabilities_.produces_rtk);
+  local_param_loader.loadParam("outputs/ground_truth", (bool &)_capabilities_.produces_ground_truth);
+  local_param_loader.loadParam("outputs/imu", (bool &)_capabilities_.produces_imu);
+  local_param_loader.loadParam("outputs/altitude", (bool &)_capabilities_.produces_altitude);
+  local_param_loader.loadParam("outputs/magnetometer_heading", (bool &)_capabilities_.produces_magnetometer_heading);
+  local_param_loader.loadParam("outputs/magnetic_field", (bool &)_capabilities_.produces_magnetic_field);
+  local_param_loader.loadParam("outputs/rc_channels", (bool &)_capabilities_.produces_rc_channels);
+  local_param_loader.loadParam("outputs/battery_state", (bool &)_capabilities_.produces_battery_state);
+  local_param_loader.loadParam("outputs/position", (bool &)_capabilities_.produces_position);
+  local_param_loader.loadParam("outputs/orientation", (bool &)_capabilities_.produces_orientation);
+  local_param_loader.loadParam("outputs/velocity", (bool &)_capabilities_.produces_velocity);
+  local_param_loader.loadParam("outputs/angular_velocity", (bool &)_capabilities_.produces_angular_velocity);
+  local_param_loader.loadParam("outputs/odometry", (bool &)_capabilities_.produces_odometry);
 
   if (!local_param_loader.loadedSuccessfully()) {
     RCLCPP_ERROR(node_->get_logger(), "Could not load all parameters!");
@@ -276,6 +324,14 @@ void MrsUavPx4Api::initialize(const rclcpp::Node::SharedPtr& node, std::shared_p
   sch_mavros_command_long_ = mrs_lib::ServiceClientHandler<mavros_msgs::srv::CommandLong>(node_, "~/mavros_cmd_out", callback_group_);
   sch_mavros_mode_         = mrs_lib::ServiceClientHandler<mavros_msgs::srv::SetMode>(node_, "~/mavros_set_mode_out", callback_group_);
 
+
+  // | --------------------- service server -------------------- |
+  if (_simulation_) {
+    ssh_ignore_ground_truth_ = mrs_lib::ServiceServerHandler<std_srvs::srv::SetBool>(
+        node_, "~/ignore_ground_truth_in", [this](const auto &request, const auto &response) { return this->callbackIgnoreGroundTruth(request, response); },
+        rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+  }
+
   // | ----------------------- subscribers ---------------------- |
 
   rclcpp::QoS qos_profile(10);
@@ -284,41 +340,55 @@ void MrsUavPx4Api::initialize(const rclcpp::Node::SharedPtr& node, std::shared_p
   mrs_lib::SubscriberHandlerOptions shopts;
   shopts.node                                = node_;
   shopts.node_name                           = "MrsHwPx4Api";
-  shopts.no_message_timeout                  = mrs_lib::no_timeout;
+  shopts.no_message_timeout                  = rclcpp::Duration::from_seconds(1.0);
   shopts.threadsafe                          = true;
   shopts.autostart                           = true;
   shopts.subscription_options.callback_group = callback_group_;
   shopts.qos                                 = qos_profile;
 
   if (_simulation_) {
-    sh_ground_truth_ = mrs_lib::SubscriberHandler<nav_msgs::msg::Odometry>(shopts, "~/ground_truth_in", &MrsUavPx4Api::callbackGroundTruth, this);
+    init_subscriber_handler(this, sh_ground_truth_, shopts, "~/ground_truth_in", &MrsUavPx4Api::callbackGroundTruth, &MrsUavPx4Api::timeoutGeneralTopic,
+                            error_type_t::not_receiving_ground_truth, "Not receiving ground truth data");
   }
 
   /* if (!_simulation_) { */
   /* sh_rtk_ = mrs_lib::SubscriberHandler<mrs_modules_msgs::msg::Bestpos>(shopts, "rtk_in", &MrsUavPx4Api::callbackRTK, this); */
   /* } */
 
-  sh_mavros_state_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::State>(shopts, "~/mavros_state_in", &MrsUavPx4Api::callbackMavrosState, this);
+  init_subscriber_handler(this, sh_mavros_state_, shopts, "~/mavros_state_in", &MrsUavPx4Api::callbackMavrosState, &MrsUavPx4Api::timeoutGeneralTopic,
+                          error_type_t::not_receiving_mavros_state, "Not receiving Mavros state messages");
 
-  sh_mavros_odometry_local_ = mrs_lib::SubscriberHandler<nav_msgs::msg::Odometry>(shopts, "~/mavros_local_position_in", &MrsUavPx4Api::callbackOdometryLocal, this);
+  sh_mavros_odometry_local_ =
+      mrs_lib::SubscriberHandler<nav_msgs::msg::Odometry>(shopts, "~/mavros_local_position_in", &MrsUavPx4Api::callbackOdometryLocal, this);
 
   sh_mavros_odometry_in_ = mrs_lib::SubscriberHandler<nav_msgs::msg::Odometry>(shopts, "~/mavros_odometry_in", &MrsUavPx4Api::callbackOdometryIn, this);
 
-  sh_mavros_gps_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::NavSatFix>(shopts, "~/mavros_global_position_in", &MrsUavPx4Api::callbackNavsatFix, this);
+  init_subscriber_handler(this, sh_mavros_gps_, shopts, "~/mavros_global_position_in", &MrsUavPx4Api::callbackNavsatFix, &MrsUavPx4Api::timeoutGeneralTopic,
+                          error_type_t::not_receiving_gps, "Not receiving GPS data");
 
-  sh_mavros_distance_sensor_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/mavros_garmin_in", &MrsUavPx4Api::callbackDistanceSensor, this);
+  init_subscriber_handler(this, sh_mavros_distance_sensor_, shopts, "~/mavros_garmin_in", &MrsUavPx4Api::callbackDistanceSensor,
+                          &MrsUavPx4Api::timeoutGeneralTopic, error_type_t::not_receiving_distance_sensor, "Not receiving distance sensor data");
 
-  sh_mavros_imu_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/mavros_imu_in", &MrsUavPx4Api::callbackImu, this);
+  init_subscriber_handler(this, sh_mavros_imu_, shopts, "~/mavros_imu_in", &MrsUavPx4Api::callbackImu, &MrsUavPx4Api::timeoutGeneralTopic,
+                          error_type_t::not_receiving_imu, "Not receiving IMU data");
 
-  sh_mavros_magnetometer_heading_ = mrs_lib::SubscriberHandler<std_msgs::msg::Float64>(shopts, "~/mavros_magnetometer_in", &MrsUavPx4Api::callbackMagnetometer, this);
+  sh_mavros_magnetometer_heading_ =
+      mrs_lib::SubscriberHandler<std_msgs::msg::Float64>(shopts, "~/mavros_magnetometer_in", &MrsUavPx4Api::callbackMagnetometer, this);
 
-  sh_mavros_magnetic_field_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::MagneticField>(shopts, "~/mavros_magnetic_field_in", &MrsUavPx4Api::callbackMagneticField, this);
+  sh_mavros_magnetic_field_ =
+      mrs_lib::SubscriberHandler<sensor_msgs::msg::MagneticField>(shopts, "~/mavros_magnetic_field_in", &MrsUavPx4Api::callbackMagneticField, this);
 
-  sh_mavros_rc_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::RCIn>(shopts, "~/mavros_rc_in", &MrsUavPx4Api::callbackRC, this);
 
   sh_mavros_altitude_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::Altitude>(shopts, "~/mavros_altitude_in", &MrsUavPx4Api::callbackAltitude, this);
 
   sh_gps_status_raw_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::GPSRAW>(shopts, "~/mavros_gps_status_raw_in", &MrsUavPx4Api::callbackGpsStatusRaw, this);
+
+  // In simulation ignore the timeout for RC channels and battery state
+  if (_simulation_) {
+    shopts.no_message_timeout = mrs_lib::no_timeout;
+  }
+
+  sh_mavros_rc_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::RCIn>(shopts, "~/mavros_rc_in", &MrsUavPx4Api::callbackRC, this);
 
   sh_mavros_battery_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::BatteryState>(shopts, "~/mavros_battery_in", &MrsUavPx4Api::callbackBattery, this);
 
@@ -554,7 +624,7 @@ void MrsUavPx4Api::callbackTrackerCmd([[maybe_unused]] const mrs_msgs::msg::Trac
 
 /* callbackArming() //{ */
 
-std::tuple<bool, std::string> MrsUavPx4Api::callbackArming([[maybe_unused]] const bool& request) {
+std::tuple<bool, std::string> MrsUavPx4Api::callbackArming([[maybe_unused]] const bool &request) {
 
   std::stringstream ss;
 
@@ -570,11 +640,11 @@ std::tuple<bool, std::string> MrsUavPx4Api::callbackArming([[maybe_unused]] cons
   }
 
   srv_out->broadcast    = false;
-  srv_out->command      = 400;  // the code for arming
+  srv_out->command      = 400; // the code for arming
   srv_out->confirmation = true;
 
-  srv_out->param1 = request ? 1 : 0;      // arm or disarm?
-  srv_out->param2 = request ? 0 : 21196;  // 21196 allows to disarm even in mid-flight
+  srv_out->param1 = request ? 1 : 0;     // arm or disarm?
+  srv_out->param2 = request ? 0 : 21196; // 21196 allows to disarm even in mid-flight
   srv_out->param3 = 0;
   srv_out->param4 = 0;
   srv_out->param5 = 0;
@@ -668,7 +738,7 @@ void MrsUavPx4Api::timeoutMavrosState(void) {
 
   auto last_mavros_state_time = mrs_lib::get_mutexed(mutex_last_mavros_state_time_, last_mavros_state_time_);
 
-  auto time = clock_->now() - last_mavros_state_time;
+  const auto time = clock_->now() - last_mavros_state_time;
 
   if (time.seconds() > _mavros_timeout_) {
 
@@ -686,10 +756,37 @@ void MrsUavPx4Api::timeoutMavrosState(void) {
 
   if (time.seconds() > _mavros_passable_delay_) {
 
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "Not recieving Mavros state message for '%.3f s'! Setup the PixHawk SD card!!", time.seconds());
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "This could be also caused by the not being PixHawk booted properly due to, e.g., antispark connector jerkyness.");
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "The Mavros state should be supplied at 100 Hz to provided fast refresh rate on the state of the OFFBOARD mode.");
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "If missing, the UAV could be disarmed by safety routines while not knowing it has switched to the MANUAL mode.");
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "Not receiving Mavros state message for '%.3f s'! Setup the PixHawk SD card!!", time.seconds());
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
+                         "This could be also caused by the not being PixHawk booted properly due to, e.g., antispark connector jerkiness.");
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
+                         "The Mavros state should be supplied at 100 Hz to provide fast refresh rate on the state of the OFFBOARD mode.");
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
+                         "If missing, the UAV could be disarmed by safety routines while not knowing it has switched to the MANUAL mode.");
+  }
+
+  error_publisher_->addGeneralError(error_type_t::not_receiving_mavros_state, "Not receiving Mavros state");
+}
+
+//}
+
+
+/* timeoutGeneralTopic() //{ */
+
+void MrsUavPx4Api::timeoutGeneralTopic(const std::string &topic_name, const rclcpp::Time &last_msg_time, const error_type_t &error_type,
+                                       const std::string &error_description) {
+
+  if (!is_initialized_) {
+    return;
+  }
+
+  const auto delay = clock_->now() - last_msg_time;
+
+  if (delay > _general_topic_timeout_) {
+
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "Have not received '%s' for more than '%.3f s'", topic_name.c_str(), delay.seconds());
+
+    error_publisher_->addGeneralError(error_type, error_description);
   }
 }
 
@@ -697,7 +794,7 @@ void MrsUavPx4Api::timeoutMavrosState(void) {
 
 /* RCChannelToRange() //{ */
 
-double MrsUavPx4Api::RCChannelToRange(const double& rc_value) {
+double MrsUavPx4Api::RCChannelToRange(const double &rc_value) {
 
   double tmp_0_to_1 = (rc_value - double(PWM_MIN)) / (double(PWM_RANGE));
 
@@ -766,15 +863,24 @@ void MrsUavPx4Api::callbackOdometryLocal(const nav_msgs::msg::Odometry::ConstSha
 
   RCLCPP_INFO_ONCE(node_->get_logger(), "getting Mavros's local odometry");
 
-  auto odom = msg;
+  nav_msgs::msg::Odometry odom = *msg;
+
+  {
+    std::scoped_lock lock(mutex_orientation_);
+    odom.pose.pose.orientation = orientation_;
+  }
+  {
+    std::scoped_lock lock(mutex_angular_velocity_);
+    odom.twist.twist.angular = angular_velocity_;
+  }
 
   // | -------------------- publish position -------------------- |
 
   geometry_msgs::msg::PointStamped position;
 
-  position.header.stamp    = odom->header.stamp;
+  position.header.stamp    = msg->header.stamp;
   position.header.frame_id = _uav_name_ + "/" + _world_frame_name_;
-  position.point           = odom->pose.pose.position;
+  position.point           = msg->pose.pose.position;
 
   double lat, lon, correct_x, correct_y;
 
@@ -786,9 +892,9 @@ void MrsUavPx4Api::callbackOdometryLocal(const nav_msgs::msg::Odometry::ConstSha
       // therefore, we convert it back to WGS84 frame and then convert correctly using mrs_lib.
 
       // BEGIN PX4 CODE
-      const double x_rad = (double)odom->pose.pose.position.y / 6371000.0;
-      const double y_rad = (double)odom->pose.pose.position.x / 6371000.0;
-      const double c = sqrt(x_rad * x_rad + y_rad * y_rad);
+      const double x_rad = (double)msg->pose.pose.position.y / 6371000.0;
+      const double y_rad = (double)msg->pose.pose.position.x / 6371000.0;
+      const double c     = sqrt(x_rad * x_rad + y_rad * y_rad);
 
       if (fabs(c) > 0) {
         const double sin_c = sin(c);
@@ -816,7 +922,6 @@ void MrsUavPx4Api::callbackOdometryLocal(const nav_msgs::msg::Odometry::ConstSha
 
       RCLCPP_DEBUG(node_->get_logger(), "position_px4_x: %f, position_px4_y: %f", position.point.x, position.point.y);
       RCLCPP_DEBUG(node_->get_logger(), "correct_mrs_x: %f, correct_mrs_y: %f", correct_x, correct_y);
-
     }
 
     common_handlers_->publishers.publishPosition(position);
@@ -828,9 +933,9 @@ void MrsUavPx4Api::callbackOdometryLocal(const nav_msgs::msg::Odometry::ConstSha
 
     geometry_msgs::msg::Vector3Stamped velocity;
 
-    velocity.header.stamp    = odom->header.stamp;
+    velocity.header.stamp    = msg->header.stamp;
     velocity.header.frame_id = _uav_name_ + "/" + _body_frame_name_;
-    velocity.vector          = odom->twist.twist.linear;
+    velocity.vector          = msg->twist.twist.linear;
 
     common_handlers_->publishers.publishVelocity(velocity);
   }
@@ -841,14 +946,14 @@ void MrsUavPx4Api::callbackOdometryLocal(const nav_msgs::msg::Odometry::ConstSha
 
     if (_capabilities_.produces_gnss and _ref_latlon_init) {
 
-      auto odom_new = *odom;
+      auto odom_new                 = odom;
       odom_new.pose.pose.position.x = correct_x;
       odom_new.pose.pose.position.y = correct_y;
       common_handlers_->publishers.publishOdometry(odom_new);
 
     } else {
 
-      common_handlers_->publishers.publishOdometry(*odom);
+      common_handlers_->publishers.publishOdometry(odom);
     }
   }
 }
@@ -867,6 +972,14 @@ void MrsUavPx4Api::callbackOdometryIn(const nav_msgs::msg::Odometry::ConstShared
 
   auto odom = msg;
 
+  {
+    std::scoped_lock lock(mutex_orientation_);
+    orientation_ = odom->pose.pose.orientation;
+  }
+  {
+    std::scoped_lock lock(mutex_angular_velocity_);
+    angular_velocity_ = odom->twist.twist.angular;
+  }
 
   // | ------------------- publish orientation ------------------ |
 
@@ -920,7 +1033,6 @@ void MrsUavPx4Api::callbackNavsatFix(const sensor_msgs::msg::NavSatFix::ConstSha
       mrs_lib::UTM(msg->latitude, msg->longitude, &_ref_utm_x, &_ref_utm_y);
       _ref_latlon_init = true;
     }
-
   }
 }
 
@@ -981,10 +1093,18 @@ void MrsUavPx4Api::callbackMagnetometer(const std_msgs::msg::Float64::ConstShare
 
   if (_capabilities_.produces_magnetometer_heading) {
 
+    // Converting the value from MAVROS msg in degrees into radians for
+    // consistency with other values.
+    // Mavros yaw angle is given in degrees from 0.0..359.99 degrees
+    auto global_heading_rad = mrs_lib::geometry::degrees::convert<mrs_lib::geometry::radians>(msg->data);
+
+    // To be consistent with the local heading [-pi, pi]
+    auto sradians_heading = global_heading_rad.convert<mrs_lib::geometry::sradians>();
+
     mrs_msgs::msg::Float64Stamped mag_out;
     mag_out.header.stamp    = clock_->now();
     mag_out.header.frame_id = _uav_name_ + "/" + _world_frame_name_;
-    mag_out.value           = msg->data;
+    mag_out.value           = sradians_heading.value();
 
     common_handlers_->publishers.publishMagnetometerHeading(mag_out);
   }
@@ -1073,27 +1193,27 @@ void MrsUavPx4Api::callbackGpsStatusRaw(const mavros_msgs::msg::GPSRAW::ConstSha
 
     mrs_msgs::msg::GpsInfo gps_info_out;
 
-    gps_info_out.stamp    = msg->header.stamp;  // [GPS_FIX_TYPE] GPS fix type
-    gps_info_out.fix_type = msg->fix_type;      // [GPS_FIX_TYPE] GPS fix type
+    gps_info_out.stamp    = msg->header.stamp; // [GPS_FIX_TYPE] GPS fix type
+    gps_info_out.fix_type = msg->fix_type;     // [GPS_FIX_TYPE] GPS fix type
 
-    gps_info_out.lat                = double(msg->lat) / 10000000;  // [deg] Latitude (WGS84, EGM96 ellipsoid)
-    gps_info_out.lon                = double(msg->lon) / 10000000;  // [deg] Longitude (WGS84, EGM96 ellipsoid)
-    gps_info_out.alt                = float(msg->alt) / 1000;       // [m]  (MSL). Positive for up. Not WGS84 altitude.
-    gps_info_out.eph                = msg->eph;                     // GPS HDOP horizontal dilution of position (unitless). If unknown, set to: UINT16_MAX
-    gps_info_out.epv                = msg->epv;                     // GPS VDOP vertical dilution of position (unitless). If unknown, set to: UINT16_MAX
-    gps_info_out.vel                = float(msg->vel) / 100;        // [m/s] GPS ground speed. If unknown, set to: UINT16_MAX
-    gps_info_out.cog                = float(msg->cog) / 100;        // [deg] Course over ground (NOT heading, but direction of movement), 0.0..359.99 degrees.
-    gps_info_out.satellites_visible = msg->satellites_visible;      // Number of satellites visible. If unknown, set to 255
+    gps_info_out.lat                = double(msg->lat) / 10000000; // [deg] Latitude (WGS84, EGM96 ellipsoid)
+    gps_info_out.lon                = double(msg->lon) / 10000000; // [deg] Longitude (WGS84, EGM96 ellipsoid)
+    gps_info_out.alt                = float(msg->alt) / 1000;      // [m]  (MSL). Positive for up. Not WGS84 altitude.
+    gps_info_out.eph                = msg->eph;                    // GPS HDOP horizontal dilution of position (unitless). If unknown, set to: UINT16_MAX
+    gps_info_out.epv                = msg->epv;                    // GPS VDOP vertical dilution of position (unitless). If unknown, set to: UINT16_MAX
+    gps_info_out.vel                = float(msg->vel) / 100;       // [m/s] GPS ground speed. If unknown, set to: UINT16_MAX
+    gps_info_out.cog                = float(msg->cog) / 100;       // [deg] Course over ground (NOT heading, but direction of movement), 0.0..359.99 degrees.
+    gps_info_out.satellites_visible = msg->satellites_visible;     // Number of satellites visible. If unknown, set to 255
 
-    gps_info_out.alt_ellipsoid = float(msg->alt_ellipsoid) / 1000;  // [m] Altitude (above WGS84, EGM96 ellipsoid). Positive for up.
-    gps_info_out.h_acc         = float(msg->h_acc) / 1000;          // [m] Position uncertainty. Positive for up.
-    gps_info_out.v_acc         = float(msg->v_acc) / 1000;          // [m] Altitude uncertainty. Positive for up.
-    gps_info_out.vel_acc       = float(msg->vel_acc) / 1000;        // [m/s] Speed uncertainty. Positive for up.
-    gps_info_out.hdg_acc       = float(msg->hdg_acc) / 1000;        // [deg] Heading / track uncertainty
-    gps_info_out.yaw           = float(msg->yaw) / 100;             // [deg] Yaw in earth frame from north.
-    gps_info_out.dgps_num_sats = msg->dgps_numch;                   // Number of DGPS satellites
-    gps_info_out.dgps_age      = float(msg->dgps_age) / 1000;       // [s] Age of DGPS info
-    gps_info_out.baseline_dist = 0;                                 // [m] distance to the basestation, not supported by the GPSRAW message
+    gps_info_out.alt_ellipsoid = float(msg->alt_ellipsoid) / 1000; // [m] Altitude (above WGS84, EGM96 ellipsoid). Positive for up.
+    gps_info_out.h_acc         = float(msg->h_acc) / 1000;         // [m] Position uncertainty. Positive for up.
+    gps_info_out.v_acc         = float(msg->v_acc) / 1000;         // [m] Altitude uncertainty. Positive for up.
+    gps_info_out.vel_acc       = float(msg->vel_acc) / 1000;       // [m/s] Speed uncertainty. Positive for up.
+    gps_info_out.hdg_acc       = float(msg->hdg_acc) / 1000;       // [deg] Heading / track uncertainty
+    gps_info_out.yaw           = float(msg->yaw) / 100;            // [deg] Yaw in earth frame from north.
+    gps_info_out.dgps_num_sats = msg->dgps_numch;                  // Number of DGPS satellites
+    gps_info_out.dgps_age      = float(msg->dgps_age) / 1000;      // [s] Age of DGPS info
+    gps_info_out.baseline_dist = 0;                                // [m] distance to the basestation, not supported by the GPSRAW message
 
     common_handlers_->publishers.publishGNSSStatus(gps_info_out);
   }
@@ -1128,8 +1248,6 @@ void MrsUavPx4Api::callbackGroundTruth(const nav_msgs::msg::Odometry::ConstShare
   }
 
   RCLCPP_INFO_ONCE(node_->get_logger(), "getting ground truth");
-
-  auto odom = msg;
 
   // | ------------------ publish ground truth ------------------ |
 
@@ -1199,6 +1317,38 @@ void MrsUavPx4Api::callbackGroundTruth(const nav_msgs::msg::Odometry::ConstShare
 
 //}
 
+// callbackIgnoreGroundTruth() //{ */
+
+bool MrsUavPx4Api::callbackIgnoreGroundTruth(const std_srvs::srv::SetBool::Request::SharedPtr req, std_srvs::srv::SetBool::Response::SharedPtr resp) {
+  mrs_lib::SubscriberHandlerOptions shopts;
+  shopts.node                                = node_;
+  shopts.node_name                           = "MrsHwPx4Api";
+  shopts.no_message_timeout                  = rclcpp::Duration::from_seconds(1.0);
+  shopts.threadsafe                          = true;
+  shopts.autostart                           = true;
+  shopts.subscription_options.callback_group = callback_group_;
+
+  rclcpp::QoS qos_profile(10);
+  qos_profile.reliability(RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT);
+  shopts.qos = qos_profile;
+
+
+  if (req->data) {
+    resp->message = "Stopping subscriber of ground_truth.";
+    if (sh_ground_truth_.hasMsg()) {
+      sh_ground_truth_.stop();
+    }
+  } else {
+    resp->message = "Starting subscriber of ground_truth.";
+    init_subscriber_handler(this, sh_ground_truth_, shopts, "~/ground_truth_in", &MrsUavPx4Api::callbackGroundTruth, &MrsUavPx4Api::timeoutGeneralTopic,
+                            error_type_t::not_receiving_ground_truth, "Not receiving ground truth.");
+  }
+  resp->success = true;
+  return true;
+}
+
+//}
+
 /* /1* callbackRTK() //{ *1/ */
 
 /* void MrsUavPx4Api::callbackRTK(const mrs_modules_msgs::msg::Bestpos::ConstSharedPtr msg) { */
@@ -1259,7 +1409,7 @@ void MrsUavPx4Api::timerMain() {
 
 //}
 
-}  // namespace mrs_uav_px4_api
+} // namespace mrs_uav_px4_api
 
 #include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(mrs_uav_px4_api::MrsUavPx4Api, mrs_uav_hw_api::MrsUavHwApi)
