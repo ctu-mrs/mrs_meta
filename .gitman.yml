@@ -21,7 +21,7 @@ sources:
     repo: https://github.com/ctu-mrs/mrs_uav_controllers.git
     rev: ros2
     params: -b ros2 --depth=1
-    scripts: [rm -rf .git]
+    scripts: [rm -rf .git lib]
 
   - name: mrs_uav_autostart
     repo: https://github.com/ctu-mrs/mrs_uav_autostart.git
@@ -57,7 +57,7 @@ sources:
     repo: https://github.com/ctu-mrs/mrs_uav_trackers.git
     rev: ros2
     params: -b ros2 --depth=1
-    scripts: [rm -rf .git]
+    scripts: [rm -rf .git lib]
 
   - name: mrs_uav_trajectory_generation
     repo: https://github.com/ctu-mrs/mrs_uav_trajectory_generation.git
@@ -69,7 +69,7 @@ sources:
     repo: https://github.com/ctu-mrs/mrs_uav_gazebo_simulator.git
     rev: ros2
     params: -b ros2 --depth=1
-    scripts: [rm -rf .git]
+    scripts: [rm -rf .git models/mrs_robots_description/meshes models/mrs_robots_description/textures]
 
   - name: mrs_uav_system
     repo: https://github.com/ctu-mrs/mrs_uav_system.git
@@ -81,7 +81,7 @@ sources:
     repo: https://github.com/ctu-mrs/ctu-mrs.github.io.git
     rev: master
     params: -b master --depth=1
-    scripts: [rm -rf .git versioned_docs]
+    scripts: [rm -rf .git versioned_docs docs/130-unrelated]
 
   - name: mrs_octomap_server
     repo: https://github.com/ctu-mrs/mrs_octomap_server.git
@@ -123,7 +123,7 @@ sources:
     repo: https://github.com/ctu-mrs/open_vins.git
     rev: ros2
     params: -b ros2 --depth=1
-    scripts: [rm -rf .git]
+    scripts: [rm -rf .git ov_data ov_eval]
 
   - name: mrs_open_vins_estimator_plugin
     repo: https://github.com/ctu-mrs/mrs_open_vins_estimator_plugin.git
@@ -166,6 +166,18 @@ sources:
     rev: ros2
     params: -b ros2 --depth=1
     scripts: [rm -rf .git]
+
+  - name: flight_forge
+    repo: https://github.com/ctu-mrs/flight_forge.git
+    rev: master
+    params: -b master --depth=1
+    scripts: [rm -rf .git UINav3Plugin_5.4 UnrealYAML FlightForgePlugin/Content FlightForgePlugin/Source/ThirdParty]
+
+  - name: mrs_flight_forge_connector
+    repo: https://github.com/ctu-mrs/mrs_flight_forge_connector.git
+    rev: master
+    params: -b master --depth=1
+    scripts: [rm -rf .git extern include/cereal include/kissnet]
 
   - name: mrs_uav_px4_api
     repo: https://github.com/ctu-mrs/mrs_uav_px4_api.git

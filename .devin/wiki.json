@@ -43,6 +43,26 @@
       ]
     },
     {
+      "title": "UAV ROS API, Frames and Configuration",
+      "purpose": "Document how users and their own nodes interact with a running UAV: the main topics and services exposed by the MRS UAV System, reference and trajectory inputs, frames of reference and transformations, and how to override default parameters with custom config files and real-world (safety area, world origin) files",
+      "parent": "Getting Started",
+      "page_notes": [
+        {
+          "content": "Sources: ctu-mrs.github.io/docs/40-api (UAV-ROS API, ROS messages, custom configs, frames of reference, transformations, custom real world file, trajectory input), corroborated by mrs_msgs/ (msg/, srv/), mrs_uav_managers/ (control_manager, uav_manager, transform_manager, safety_area_manager, config/ defaults) and the custom_config.yaml / world_config.yaml files in the tmux/ sessions of mrs_core_examples/ and the simulator packages."
+        }
+      ]
+    },
+    {
+      "title": "Examples and How-to Use Cases",
+      "parent": "Getting Started",
+      "purpose": "Walk through the example packages (waypoint flier, example controller/tracker/estimator plugins, sweeping generator, computer vision examples) and common how-to use cases such as loading paths and trajectories, mid-air activation, the passthrough estimator and relative commands",
+      "page_notes": [
+        {
+          "content": "Sources: mrs_core_examples/ (cpp/, python/, repurpose_package.sh), mrs_computer_vision_examples/, ctu-mrs.github.io/docs/62-example-packages and ctu-mrs.github.io/docs/65-howto-usecases."
+        }
+      ]
+    },
+    {
       "title": "Prerequisites",
       "purpose": "Summarize the required knowledge and tools (Linux, Bash, Git, SSH, ROS2, Docker) needed to work with and develop for the MRS UAV system",
       "parent": "Getting Started",
@@ -102,8 +122,18 @@
       ]
     },
     {
-      "title": "ROS1 to ROS2 Migration Patterns",
-      "purpose": "Document key patterns and changes when migrating from ROS1 to ROS2, covering build system, code patterns, and configuration differences",
+      "title": "ROS1 to ROS2 Migration: Time, Publishers, QoS and Logging",
+      "purpose": "Document key patterns and changes when migrating from ROS1 to ROS2 as used in MRS code: rclcpp::Time and rclcpp::Duration, clocks and sleeping, publisher creation, Quality of Service (QoS) profiles, latched publishers with transient_local durability, and logging",
+      "parent": "ROS2 Development Environment",
+      "page_notes": [
+        {
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/25-ros2/50-ros1-ros2-patterns/30-cpp_working_with_time.md, 51-publishers.md, 50-logging.md, corroborated by usage in mrs_lib/ (e.g. publisher and timer wrappers) and mrs_core_examples/."
+        }
+      ]
+    },
+    {
+      "title": "Colcon Build System, Profiles and Mixins",
+      "purpose": "Explain colcon configuration using command-line arguments and YAML files, workspace-wide build settings, build profiles via colcon mixins, and custom mixin creation",
       "parent": "ROS2 Development Environment",
       "page_notes": [
         {
@@ -112,78 +142,18 @@
       ]
     },
     {
-      "title": "Colcon Build System",
-      "purpose": "Explain colcon configuration using command-line arguments and YAML files, including build options and workspace-wide settings",
+      "title": "Launch Files, Parameters and Rosbags",
+      "purpose": "Cover ROS2 launch file structure and patterns for configuring and starting multiple nodes, ROS2 parameter configuration and runtime management (including mrs_lib's ParamLoader), and recording and converting rosbags",
       "parent": "ROS2 Development Environment",
       "page_notes": [
         {
-          "content": ""
-        }
-      ]
-    },
-    {
-      "title": "Working with Time",
-      "purpose": "Document rclcpp::Time and rclcpp::Duration usage, clock objects, sleep functions, and time comparisons in ROS2",
-      "parent": "ROS2 Development Environment",
-      "page_notes": [
-        {
-          "content": ""
-        }
-      ]
-    },
-    {
-      "title": "Launch Files",
-      "purpose": "Cover ROS2 launch file structure and patterns for configuring and starting multiple nodes",
-      "parent": "ROS2 Development Environment",
-      "page_notes": [
-        {
-          "content": ""
-        }
-      ]
-    },
-    {
-      "title": "Publishers and QoS",
-      "purpose": "Document ROS2 publisher creation, Quality of Service (QoS) profiles, and implementing latched publishers with transient_local durability",
-      "parent": "ROS2 Development Environment",
-      "page_notes": [
-        {
-          "content": ""
-        }
-      ]
-    },
-    {
-      "title": "Parameters",
-      "purpose": "Cover ROS2 parameter configuration, runtime management, and usage patterns for node configuration",
-      "parent": "ROS2 Development Environment",
-      "page_notes": [
-        {
-          "content": ""
-        }
-      ]
-    },
-    {
-      "title": "Workspace Profiles and Mixins",
-      "purpose": "Explain colcon mixins for build configuration profiles, custom mixin creation, and workspace-wide build settings",
-      "parent": "ROS2 Development Environment",
-      "page_notes": [
-        {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/25-ros2/50-ros1-ros2-patterns/40-launch_files.md, 60-parameters.md, 65-rosbags.md, ctu-mrs.github.io/docs/120-miscellaneous/bagfile_convert_ros1_ros2.md, with real examples from the launch/ folders of the mrs_uav_* packages and mrs_lib/include/mrs_lib/param_loader.h."
         }
       ]
     },
     {
       "title": "System Architecture and Package Overview",
-      "purpose": "Comprehensive overview of the MRS UAV system architecture, detailing all packages and their relationships",
-      "page_notes": [
-        {
-          "content": ""
-        }
-      ]
-    },
-    {
-      "title": "Architecture Overview",
-      "purpose": "Present the high-level architecture showing how core libraries, UAV management, control, estimation, mapping, and simulation packages interact",
-      "parent": "System Architecture and Package Overview",
+      "purpose": "Present the high-level architecture of the MRS UAV System, showing how core libraries, UAV management, control, estimation, mapping, simulation and hardware packages interact, and list every package with its role and relationships",
       "page_notes": [
         {
           "content": ""
@@ -226,7 +196,7 @@
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "open_vins/ (OpenVINS) and point-lio/ (Point-LIO) are forks of external algorithms. Describe them at the interface level (what they provide to the MRS UAV System, launch and configuration, and how mrs_open_vins_estimator_plugin, mrs_vins_republisher, mrs_vins_imu_filter and mrs_point_lio_estimator_plugin integrate them) rather than documenting their internal algorithms. The core of the framework is mrs_uav_state_estimators/ and the estimation manager in mrs_uav_managers/."
         }
       ]
     },
@@ -251,12 +221,32 @@
       ]
     },
     {
+      "title": "Sensors",
+      "parent": "Hardware Interfaces",
+      "purpose": "Document the sensors supported on MRS UAVs (Ouster and Livox lidars, Luxonis OAK, RealSense and Bluefox cameras), their drivers, launch and configuration, and how their data feeds state estimation and mapping",
+      "page_notes": [
+        {
+          "content": "Sources: ctu-mrs.github.io/docs/75-sensors, realsense/ (launch/, config/), sensor templates in mrs_uav_gazebo_simulator/models/mrs_robots_description/sdf/components, and ctu-mrs.github.io/docs/100-hardware/cameras."
+        }
+      ]
+    },
+    {
       "title": "Simulation Packages",
-      "purpose": "Document the supported simulators (Multirotor, Gazebo, or FlightForge), how to run simulations, and how simulated sensors and actors map to real hardware packages",
+      "purpose": "Compare the supported simulators (MRS Multirotor Simulator, Gazebo, FlightForge) and when to use each; document in depth the MRS Multirotor Simulator and Gazebo: how to run them, spawn UAVs, configure drones, worlds and sensors, and how simulated sensors and actors map to real hardware packages",
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "Cover mrs_multirotor_simulator/ and mrs_uav_gazebo_simulator/ (launch/, config/, tmux/, models/mrs_robots_description/sdf/ jinja templates for drones and sensors) together with ctu-mrs.github.io/docs/60-simulations/01-gazebo and 10-mrs. Only summarize FlightForge here and link to the dedicated 'FlightForge Simulator' page."
+        }
+      ]
+    },
+    {
+      "title": "FlightForge Simulator",
+      "purpose": "Document the Unreal Engine 5 based FlightForge simulator: its architecture (UE5 plugin + ROS2 endpoint), available maps, installation on Linux and Windows/WSL, running it (including headless mode), simulated sensors (cameras, depth, segmentation, lidar), configuration files, example tmux sessions with the MRS UAV System, and the standalone C++/Python connector API for using it without ROS",
+      "parent": "Simulation Packages",
+      "page_notes": [
+        {
+          "content": "Sources: mrs_uav_flightforge_simulator/ (ROS2 endpoint and MRS HW API plugin: src/flightforge_simulator.cpp, src/hw_api_plugin.cpp, config/, launch/, tmux/one_drone/), flight_forge/ (Unreal plugin; only C++ source under FlightForgePlugin/Source is kept, the Unreal assets were removed from this mono-repo and the precompiled simulator binary is downloaded separately as described in the READMEs), mrs_flight_forge_connector/ (C++ API in include/flight_forge_connector and src/, pybind11 bindings in src/python-modules, examples/cli and examples/python including the gym-style ueds_camera_env.py / ueds_lidar_env.py environments) and ctu-mrs.github.io/docs/60-simulations/30-FlightForge. Explain the network protocol between the UE5 game (flight_forge/FlightForgePlugin/Source/ueds, MessageSerialization) and its clients. Note that mrs_uav_flightforge_simulator/ vendors a copy of the connector sources in src/flight_forge_connector and include/flight_forge_connector."
         }
       ]
     },
@@ -271,19 +261,38 @@
       ]
     },
     {
-      "title": "Docker and Containerization",
-      "purpose": "Explain how Docker is used in MRS for reproducible development and deployment, and point to the repo/CI artifacts that build Docker images",
+      "title": "Writing Plugins",
+      "parent": "System Architecture and Package Overview",
+      "purpose": "Explain the pluginlib-based extension points of the MRS UAV System and how to write custom controllers, trackers, state estimators and hardware API plugins, including the interfaces to implement, registration and configuration",
+      "page_notes": [
+        {
+          "content": "Sources: ctu-mrs.github.io/docs/45-plugin-interface, the plugin interfaces in mrs_uav_managers/include (controller, tracker, estimator interfaces) and mrs_uav_hw_api/, the example plugins in mrs_core_examples/cpp/example_*_plugin, and real implementations in mrs_uav_controllers/, mrs_uav_trackers/, mrs_uav_state_estimators/ and mrs_uav_px4_api/."
+        }
+      ]
+    },
+    {
+      "title": "Advanced Topics",
+      "purpose": "Collect deep-dive features that require specialized knowledge: RTK GPS integration, AMSL altitude handling, the escalating failsafe, obstacle bumper, inter-UAV collision avoidance, precise landing and multi-robot networking over Zenoh",
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/50-features (56-escalating-failsafe, 58-obstacle-bumper, 59-inter-uav-collision-avoidance, 60-precise-landing, 100-zenoh-network), ctu-mrs.github.io/blog/2024/12-18-accurate-amsl-altitude.md, corroborated by mrs_uav_managers/ and mrs_uav_state_estimators/."
+        }
+      ]
+    },
+    {
+      "title": "Deployment",
+      "purpose": "Explain how to deploy the MRS UAV System on a real UAV or workstation: native installation, Docker (and why it is used for reproducible development and deployment), Apptainer, Podman, Kubernetes and Portainer, plus preparing for a real-world experiment",
+      "page_notes": [
+        {
+          "content": "Sources: ctu-mrs.github.io/docs/70-deployment, ctu-mrs.github.io/docs/20-installation, ctu-mrs.github.io/docs/10-prerequisites/30-docker, mrs_docker/ (deployment/ros2, recipes/) and mrs_apptainer/."
         }
       ]
     },
     {
       "title": "Building Docker Images",
       "purpose": "Describe how to build MRS Docker images locally, how CI builds images, and how to customize image contents",
-      "parent": "Docker and Containerization",
+      "parent": "Deployment",
       "page_notes": [
         {
           "content": ""
@@ -293,17 +302,7 @@
     {
       "title": "Docker FAQ",
       "purpose": "Collect common Docker issues and solutions encountered when running MRS images (permissions, display forwarding, X11, GPU access, networking)",
-      "parent": "Docker and Containerization",
-      "page_notes": [
-        {
-          "content": ""
-        }
-      ]
-    },
-    {
-      "title": "Advanced Topics",
-      "purpose": "Collect deep-dive topics that require specialized knowledge (RTK integration, altitude handling, plugin architecture and custom node development)",
-      "parent": "System Architecture and Package Overview",
+      "parent": "Deployment",
       "page_notes": [
         {
           "content": ""
