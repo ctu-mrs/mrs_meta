@@ -1,0 +1,38 @@
+name: Refresh subpackages
+
+on:
+  schedule:
+    - cron: "0 3 * * 0" # every Sunday at 03:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PUSH_TOKEN }}
+
+      - name: Install gitman
+        run: pipx install gitman
+
+      - name: Refresh subpackages
+        run: |
+          find . -mindepth 1 -maxdepth 1 -type d ! -name '.*' -exec rm -rf {} +
+          gitman install
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "cturmrsbot"
+          git config user.email "154206578+cturmrsbot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "update files"
+          git push
