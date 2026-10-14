@@ -30,9 +30,18 @@ namespace mrs_lib
   public:
     /* constructor //{ */
     Impl(const SubscriberHandlerOptions& options, const message_callback_t& message_callback = message_callback_t())
-        : m_node(options.node), m_qos(options.qos), m_sub_opts(options.subscription_options), m_topic_name(options.topic_name), m_node_name(options.node_name),
-          m_got_data(false), m_new_data(false), m_used_data(false), m_timeout_manager(options.timeout_manager), m_latest_message_time(0),
-          m_latest_message(nullptr), m_message_callback(message_callback)
+        : m_node(options.node),
+          m_qos(options.qos),
+          m_sub_opts(options.subscription_options),
+          m_topic_name(options.topic_name),
+          m_node_name(options.node_name),
+          m_got_data(false),
+          m_new_data(false),
+          m_used_data(false),
+          m_timeout_manager(options.timeout_manager),
+          m_latest_message_time(0),
+          m_latest_message(nullptr),
+          m_message_callback(message_callback)
     {
 
       // initialize the callback for the TimeoutManager
@@ -236,11 +245,11 @@ namespace mrs_lib
 
   protected:
     /* default_timeout_callback() method //{ */
-    void default_timeout_callback(const std::string& topic_name, const rclcpp::Time& last_msg)
+    void default_timeout_callback([[maybe_unused]] const std::string& topic_name, const rclcpp::Time& last_msg)
     {
       const rclcpp::Duration since_msg = (m_node->get_clock()->now() - last_msg);
       const auto n_pubs = m_sub->get_publisher_count();
-      const std::string txt = "Did not receive any message from topic '" + topic_name + "' for " + std::to_string(since_msg.seconds()) + "s ("
+      const std::string txt = "Did not receive any message from topic '" + topicName() + "' for " + std::to_string(since_msg.seconds()) + "s ("
                               + std::to_string(n_pubs) + " publishers on this topic)";
 
       RCLCPP_WARN_STREAM(m_node->get_logger(), txt);

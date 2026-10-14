@@ -290,6 +290,7 @@ def generate_launch_description():
             ("~/current_constraints_out", "~/current_constraints"),
             ("~/heading_out", "~/heading"),
             ("~/speed_out", "~/speed"),
+            ("~/accumulated_path_out", "~/accumulated_path"),
             ("~/trajectory_original/poses_out", "~/trajectory_original/poses"),
             ("~/trajectory_original/markers_out", "~/trajectory_original/markers"),
             ("~/controller_diagnostics_out", "~/controller_diagnostics"),
@@ -336,6 +337,10 @@ def generate_launch_description():
             ("~/is_safety_area_enabled_out", "safety_area_manager/is_safety_zone_enabled"),
             ("~/errors", "errors"),
         ],
+
+        extra_arguments=[
+            {'use_intra_process_comms': True}
+        ],
     )
 
     load_into_existing = LoadComposableNodes(
@@ -354,13 +359,12 @@ def generate_launch_description():
         namespace=uav_name,
         name=namespace+'_container',
         package='rclcpp_components',
-        executable='component_container_mt',
+        executable='component_container_events_cbg',
         output="screen",
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
         # prefix=["valgrind --gen-suppressions=all --suppressions=/home/klaxalk/ws_bug/valgrind.supp --leak-check=full --track-origins=yes --verbose --log-file=/tmp/valgrind.txt"],
         composable_node_descriptions=[control_manager_node],
         parameters=[
-            {'use_intra_process_comms': True},
             {'thread_num': os.cpu_count()},
             {'use_sim_time': use_sim_time},
         ],

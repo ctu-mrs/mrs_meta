@@ -4,6 +4,9 @@
  */
 #pragma once
 
+#include <mrs_lib/coro/runners.hpp>
+#include <mrs_lib/coro/task.hpp>
+#include <mrs_lib/internal/coroutine_callback_helpers.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 namespace mrs_lib
@@ -32,7 +35,8 @@ namespace mrs_lib
      * @param address         Name of the service.
      * @param qos QOS         Communication quality of service profile.
      */
-    ServiceServerHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const callback_t& cbk, const rclcpp::QoS& qos = rclcpp::ServicesQoS());
+    ServiceServerHandler(const rclcpp::Node::SharedPtr& node, const std::string& address, const callback_t& cbk,
+                         const rclcpp::QoS& qos = rclcpp::ServicesQoS());
 
     /*!
      * @brief Default constructor to avoid having to use pointers.
@@ -52,8 +56,24 @@ namespace mrs_lib
      * @param qos QOS         Communication quality of service profile.
      * @param callback_group  Callback group used internally by the node for the response callback. Set to nullptr to use the default one.
      */
-    ServiceServerHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const callback_t& cbk, const rclcpp::QoS& qos,
+    ServiceServerHandler(const rclcpp::Node::SharedPtr& node, const std::string& address, const callback_t& cbk, const rclcpp::QoS& qos,
                          const rclcpp::CallbackGroup::SharedPtr& callback_group);
+
+    /**
+     * @brief A convenience constructor with Task.
+     *
+     * This is just for convenience when you want to specify the callback group.
+     *
+     * @param node            ROS node handler.
+     * @param address         Name of the service.
+     * @param qos QOS         Communication quality of service profile.
+     * @param callback_group  Callback group used internally by the node for the response callback. Set to nullptr to use the default one.
+     */
+    template <typename ClassType>
+    ServiceServerHandler(const rclcpp::Node::SharedPtr& node, const std::string& address,
+                         mrs_lib::Task<bool> (ClassType::*method)(const std::shared_ptr<typename ServiceType::Request> request,
+                                                                  const std::shared_ptr<typename ServiceType::Response> response),
+                         ClassType* instance, const rclcpp::QoS& qos, const rclcpp::CallbackGroup::SharedPtr& callback_group);
 
     /**
      * @brief A convenience constructor.
@@ -64,15 +84,15 @@ namespace mrs_lib
      * @param address         Name of the service.
      * @param callback_group  Callback group used internally by the node for the response callback. Set to nullptr to use the default one.
      */
-    ServiceServerHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const callback_t& cbk,
+    ServiceServerHandler(const rclcpp::Node::SharedPtr& node, const std::string& address, const callback_t& cbk,
                          const rclcpp::CallbackGroup::SharedPtr& callback_group);
 
   private:
     rclcpp::CallbackGroup::SharedPtr callback_group_;
     typename rclcpp::Service<ServiceType>::SharedPtr service_server_;
-  };
 
-  //}
+    //}
+  };
 
 } // namespace mrs_lib
 

@@ -7,7 +7,19 @@ description: Remote access to docker
 # Docker-host # 
   The `DOCKER_HOST` environment variable  specifies the location of the Docker
   daemon. In scenarios where the Docker daemon runs on a remote machine
-  (robot), `DOCKER_HOST` allows clients to connect to it over TCP.
+  (robot), `DOCKER_HOST` allows clients to connect to it over SSH or TCP.
+
+## SSH
+
+Assuming that connections are configured according to the [docs](../04-ssh.md), i.e. that "ssh uav1" connects without a password
+
+You can set the following and Docker will automatically use the socket found at `docker context inspect --format '{{.Endpoints.docker.Host}}'`. In case of permission issues, check the [FAQ](./100-FAQ.md)
+
+```bash
+export DOCKER_HOST=ssh://uav1
+```
+
+## TCP
   
 ### Settings 
  First the remote machine (robot) must have Docker installed.
@@ -20,7 +32,7 @@ add the following:
  ```bash 
 [Service]
 ExecStart=
-ExecStart= /usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:2375 --containerd=/run/containerd/containerd.sock
+ExecStart=/usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:2375 --containerd=/run/containerd/containerd.sock
 ```
 and restart the service, reload doesn't seem to have any effect
 ```bash

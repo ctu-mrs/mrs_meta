@@ -18,12 +18,14 @@ set(DEPENDENCIES
   std_srvs
   mrs_lib
   mrs_msgs
+  mrs_modules_msgs
   rcl_interfaces
   )
 
 set(LIBRARIES
   MrsSerial_SerialPort
   MrsSerial_VioImu_component
+  MrsSerial_BacaProtocol_component
   )
 
 #set(EXECUTABLES
@@ -50,8 +52,13 @@ add_library(MrsSerial_SerialPort SHARED
   src/serial_port.cpp
   )
 
-ament_target_dependencies(MrsSerial_SerialPort
-  ${DEPENDENCIES}
+target_link_libraries(MrsSerial_SerialPort
+  rclcpp::rclcpp
+  ${rcl_interfaces_TARGETS}
+  ${type_description_interfaces_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${std_srvs_TARGETS}
+  mrs_lib::mrs_lib
 )
 
 ## | ------------------------- VIO IMU ------------------------ |
@@ -65,6 +72,7 @@ target_compile_features(MrsSerial_VioImu_component PUBLIC c_std_99 cxx_std_17)  
 
 target_link_libraries(MrsSerial_VioImu_component
   MrsSerial_SerialPort
+  rclcpp_components::component
 )
 
 rclcpp_components_register_node(
@@ -73,9 +81,26 @@ rclcpp_components_register_node(
     EXECUTABLE MrsSerial_VioImu
 )
 
-ament_target_dependencies(MrsSerial_VioImu_component
-  ${DEPENDENCIES}
+## ---------------------- Baca Protocol ----------------------- |
+
+add_library(MrsSerial_BacaProtocol_component SHARED
+  src/baca_protocol.cpp
 )
+
+target_compile_features(MrsSerial_BacaProtocol_component PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+
+target_link_libraries(MrsSerial_BacaProtocol_component
+  MrsSerial_SerialPort
+  rclcpp_components::component
+  ${mrs_modules_msgs_TARGETS}
+)
+
+rclcpp_components_register_node(
+    MrsSerial_BacaProtocol_component
+    PLUGIN "baca_protocol::BacaProtocol"
+    EXECUTABLE MrsSerial_BacaProtocol
+)
+
 
 ## --------------------------------------------------------------
 ## |                           Testing                          |

@@ -91,7 +91,7 @@ install(
 
 install(
   DIRECTORY include/
-  DESTINATION .
+  DESTINATION include/${PROJECT_NAME}
 )
 
 install(

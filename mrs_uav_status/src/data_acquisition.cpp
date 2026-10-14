@@ -284,6 +284,11 @@ void Acquisition::initialize() {
   node_  = this_node_ptr();
   clock_ = node_->get_clock();
 
+  RCLCPP_INFO(node_->get_logger(), "initializing");
+
+  auto use_intra = node_->get_node_options().use_intra_process_comms();
+  RCLCPP_INFO(node_->get_logger(), "Intra-process comms is: %s", use_intra ? "ON" : "OFF");
+
   cbkgrp_subs_   = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   cbkgrp_timers_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
@@ -957,7 +962,7 @@ void Acquisition::prefillUavStatus() {
   std::scoped_lock lock(mutex_status_msg_);
   uav_status_.uav_name                = "N/A";
   uav_status_.uav_type                = "N/A";
-  uav_status_.uav_mass                = 0.0;
+  uav_status_.uav_mass                = "N/A";
   uav_status_.mass_set                = 0.0;
   uav_status_.control_manager_diag_hz = 0.0;
   uav_status_.controllers.clear();
@@ -1026,6 +1031,9 @@ void Acquisition::getMemLoad() {
   double buffers   = 0;
 
   for (unsigned long i = 1; i < results.size(); i++) {
+    if (results[i].empty()) {
+      continue;
+    }
 
     if (isdigit(results[i].front())) {
       try {
@@ -1041,6 +1049,9 @@ void Acquisition::getMemLoad() {
   boost::split(results, line3, [](char c) { return c == ' '; });
 
   for (unsigned long i = 1; i < results.size(); i++) {
+    if (results[i].empty()) {
+      continue;
+    }
 
     if (isdigit(results[i].front())) {
       try {
@@ -1056,6 +1067,9 @@ void Acquisition::getMemLoad() {
   boost::split(results, line4, [](char c) { return c == ' '; });
 
   for (size_t i = 1; i < results.size(); i++) {
+    if (results[i].empty()) {
+      continue;
+    }
 
     if (isdigit(results[i].front())) {
 

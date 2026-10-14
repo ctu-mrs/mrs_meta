@@ -14,7 +14,7 @@ sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o
 
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
 
-sudo apt-get -y update
+sudo apt-get update
 
 sudo apt-get -y install ros-jazzy-desktop-full ros-dev-tools
 ```
@@ -32,13 +32,17 @@ sudo apt-get -y install ros-jazzy-desktop-full ros-dev-tools
 
 ## Docker
 
-If you don't want to run ROS natively, you can run it in a container with the VS Code [dev containers](https://code.visualstudio.com/docs/devcontainers/containers) extension or you can place the following helper function in your `~/.bashrc` which will help manage permanent containers based on the MRS ROS images.
+If you don't want to run ROS natively, you can run it in a [container](../30-docker/index.md) with the VS Code [dev containers](https://code.visualstudio.com/docs/devcontainers/containers) extension or you can place the following helper function in your `~/.bashrc` which will manage permanent containers based on the MRS ROS [images](https://github.com/ctu-mrs/mrs_docker/tree/master/recipes).
 
 ```bash
 rosker() {
   local name="${1:-jazzy}"
-  local image="ctumrs/ros_$name:latest"
-  shift || true
+  local image="ctumrs/ros_${name}:latest"
+  [ $# = 0 ] || shift
+
+  # Creates a valid and unique container name
+  name="${image##*/}"
+  name="${name//:/-}"
 
   if docker ps -a --format '{{.Names}}' | grep -xq "$name"; then
     if docker ps --format '{{.Names}}' | grep -xq "$name"; then
@@ -49,13 +53,13 @@ rosker() {
   else
     echo "FROM $image
       RUN userdel ubuntu || true && \
-        useradd -u $(id -u) -d /root ubuntu && \
+        useradd -u $(id -u) ubuntu && \
         echo 'ubuntu ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/ubuntu
     " | docker build -qt "${image}_modified" - && \
 
-    docker run -it --name "$name" --network=host --privileged -e DISPLAY \
-      -u ubuntu -w /root \
-      -v "$HOME:/root" \
+    docker run -it --name "$name" --network=host --privileged \
+      -e DISPLAY="${DISPLAY:-:0}" -u ubuntu -w /home/ubuntu \
+      -v "$HOME:/home/ubuntu" \
       -v /dev:/dev \
       -v /etc/hosts:/etc/hosts \
       "${image}_modified" bash
@@ -74,8 +78,14 @@ rosker jazzy ros2 topic list
 Note that by default your home directory (and devices) will be available in the container, to avoid issues with `~/.bashrc` errors, you can conditionally source things like:
 
 ```bash
-[ -f /root/git/mrs_uav_development/shell_additions/shell_additions.sh ] ||
+[ -f /home/ubuntu/git/mrs_uav_development/shell_additions/shell_additions.sh ] ||
 source ~/git/mrs_uav_development/shell_additions/shell_additions.sh
 ```
 
-Which will not source this file if it's located in /root (in the container), if you want to source it, you should change `||` for `&&`
+Which will not source this file if it's located in `/home/ubuntu` (in the container), if you want to source it only inside the container, you should change `||` for `&&`
+
+If you don't already have an MRS ROS image from [Docker Hub](https://hub.docker.com/u/ctumrs), you may want to pull one before running `rosker` because the docker build output is hidden and you won't see any progress while pulling
+
+```bash
+docker pull ctumrs/ros_jazzy:latest
+```

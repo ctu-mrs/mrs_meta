@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 1 == use rclcpp::Timer implementation
 # 0 == use MRS's thread timer implementation
-set(USE_ROS_TIMER 1)
+set(USE_ROS_TIMER 0)
 
 if(${USE_ROS_TIMER})
   MESSAGE(WARNING "[mrs_uav_autostart]: Compiling with ROS Timers. This can cause high CPU load in runtime.")
@@ -82,10 +82,12 @@ if(ENABLE_TESTS)
 
   add_subdirectory(test)
 
-  find_package(ament_cmake_clang_format REQUIRED)
-  ament_clang_format(CONFIG_FILE "${PROJECT_SOURCE_DIR}/.clang-format")
-  find_package(ament_cmake_xmllint REQUIRED)
-  ament_xmllint()
+  if(NOT DEFINED ENV{IN_NIX_SHELL})
+    find_package(ament_cmake_clang_format REQUIRED)
+    ament_clang_format(CONFIG_FILE "${PROJECT_SOURCE_DIR}/.clang-format")
+    find_package(ament_cmake_xmllint REQUIRED)
+    ament_xmllint()
+  endif()
 
 endif()
 

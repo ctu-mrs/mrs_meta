@@ -1,15 +1,21 @@
 #!/bin/bash
 
-. /opt/ros/jazzy/setup.sh
+# set ROS_DISTRO if it's missing
+if [ -z "$ROS_DISTRO" ]; then
+  for dir in /opt/ros/*; do
+    if [ -f "$dir/setup.bash" ]; then
+      export ROS_DISTRO=$(basename "$dir")
+    fi
+  done
+fi
 
-#. /home/ubuntu/ws/install/setup.sh
+source /opt/ros/$ROS_DISTRO/setup.bash
 
-if [-z UAV_NAME ]; then
+if [ -z "$UAV_NAME" ]; then
   echo "$0: the UAV_NAME environment variable is not set"
   exit 1
 fi
 
-#cd /home/ubuntu/ws
 ros2 launch mrs_realsense uav.launch.py $@
 
-# docker run --privileged -it -v ./custom_config.yaml:/home/ubuntu/ws/custom_config.yaml mrs_realsense:latest custom_config:=custom_config.yaml
+# docker run --privileged -it -v ./custom_config.yaml:/home/ubuntu/ws/custom_config.yaml ctumrs/realsense:latest custom_config:=custom_config.yaml

@@ -76,7 +76,7 @@ def generate_launch_description():
         namespace=uav_name,
         name=namespace+'_container',
         package='rclcpp_components',
-        executable='component_container_mt',
+        executable='component_container_events_cbg',
         output="screen",
 
         composable_node_descriptions=[
@@ -93,8 +93,13 @@ def generate_launch_description():
                     {'configs': configs},
                     {'custom_config': custom_config},
                 ],
+
                 remappings=[
                     ('~/errors', 'errors'),
+                ],
+
+                extra_arguments=[
+                    {'use_intra_process_comms': True}
                 ],
             )
 

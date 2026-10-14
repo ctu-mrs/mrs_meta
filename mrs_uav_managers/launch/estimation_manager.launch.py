@@ -209,6 +209,10 @@ def generate_launch_description():
             ("~/set_world_origin_out", "transform_manager/set_world_origin"),
             ("~/update_world_origin_out", "safety_area_manager/update_world_origin"),
         ],
+
+        extra_arguments=[
+            {'use_intra_process_comms': True}
+        ],
     )
 
     load_into_existing = LoadComposableNodes(
@@ -227,14 +231,13 @@ def generate_launch_description():
         namespace=uav_name,
         name=namespace+'_container',
         package='rclcpp_components',
-        executable='component_container_mt',
+        executable='component_container_events_cbg',
         output="screen",
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
         # prefix=['debug_roslaunch ' + os.ttyname(sys.stdout.fileno())],
         # prefix=["valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --log-file=/tmp/valgrind-out.txt"],
         composable_node_descriptions=[estimation_manager_node],
         parameters=[
-            {'use_intra_process_comms': True},
             {'thread_num': os.cpu_count()},
             {'use_sim_time': use_sim_time},
         ],

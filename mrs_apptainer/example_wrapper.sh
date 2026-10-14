@@ -33,10 +33,10 @@ CLEAN_ENV=true # true: will clean the shell environment before runnning containe
 
 USE_NVIDIA=false # true: will tell Apptainer that it should use nvidia graphics. Does not work every time.
 
-# the following are mutually exclusive
+# OVERLAY and WRITABLE are mutually exclusive.
 OVERLAY=false  # true: will load persistant overlay (overlay can be created with scripts/create_overlay.sh)
 WRITABLE=false # true: will run it as --writable (works with --sandbox containers, image can be converted with scripts/convert_sandbox.sh)
-FAKEROOT=false # true: emulate root inside the container
+FAKEROOT=false # true: emulate root inside the container, use when you need to e.g. `apt install` packages.
 
 # defines what should be mounted from the host to the container
 # [TYPE], [SOURCE (host)], [DESTINATION (container)]
@@ -75,7 +75,7 @@ CONTAINER_PATH=$IMAGES_PATH/$CONTAINER_NAME
 if $OVERLAY; then
 
   if [ ! -e $OVERLAYS_PATH/$OVERLAY_NAME ]; then
-    echo "Overlay file does not exist, initialize it with the 'create_fs_overlay.sh' script"
+    echo "Overlay file does not exist, initialize it with the 'scripts/create_overlay.sh' script"
     exit 1
   fi
 
@@ -187,7 +187,7 @@ else
 fi
 
 # create tmp folder for apptainer in host's tmp
-[ ! -e /tmp/apptainer/tmp ] && mkdir -p /tmp/apptainer/tmp
+[ ! -e /tmp/apptainer/tmp ] && mkdir -p /tmp/apptainer/tmp && chmod 1777 /tmp/apptainer/tmp
 [ ! -e /tmp/apptainer/home ] && mkdir -p /tmp/apptainer/home
 
 # this will set $DISPLAY in the container to the same value as on your host machine

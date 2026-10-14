@@ -12,6 +12,8 @@
 
 /* for writing and reading from streams */
 #include <iostream>
+#include <chrono>
+#include <atomic>
 
 /* for storing information about the state of the uav (position) */
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -337,9 +339,9 @@ void WaypointFlier::callbackControlManagerDiag(const mrs_msgs::msg::ControlManag
 
   if (have_goal_ && !diagnostics->tracker_status.have_goal) {
 
-    have_goal_ = false;
-
     if (dist < _waypoint_desired_dist_) {
+
+      have_goal_ = false;
 
       waypoint_reached_ = true;
       RCLCPP_INFO(node_->get_logger(), "waypoint reached");
@@ -363,6 +365,10 @@ void WaypointFlier::callbackControlManagerDiag(const mrs_msgs::msg::ControlManag
 
       RCLCPP_INFO(node_->get_logger(), "Idling for %f seconds.", drs_params.waypoint_idle_time);
     }
+
+  } else {
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "Checking goal: have_goal: %d, tracker has goal: %d", have_goal_ ? 1 : 0,
+                         diagnostics->tracker_status.have_goal);
   }
 }
 

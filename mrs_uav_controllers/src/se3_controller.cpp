@@ -286,8 +286,17 @@ bool Se3Controller::initialize(const rclcpp::Node::SharedPtr &node, std::shared_
 
   // | -------------------- loading my params ------------------- |
 
-  private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") + "/config/private/se3_controller.yaml");
-  private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") + "/config/public/se3_controller.yaml");
+  if (!private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") +
+                                                   "/config/private/se3_controller.yaml")) {
+    RCLCPP_ERROR(node_->get_logger(), "[Se3Controller]: failed to load the private config file");
+    return false;
+  }
+
+  if (!private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") +
+                                                   "/config/public/se3_controller.yaml")) {
+    RCLCPP_ERROR(node_->get_logger(), "[Se3Controller]: failed to load the public config file");
+    return false;
+  }
 
   dynparam_mgr_->get_param_provider().copyYamls(private_handlers->param_loader->getParamProvider());
 
@@ -1108,7 +1117,7 @@ void Se3Controller::SE3Controller(const mrs_msgs::msg::UavState &uav_state, cons
 
       if (res) {
         Ev_fcu_untilted(0) = res.value().vector.x;
-        Ev_fcu_untilted(1) = res.value().vector.x;
+        Ev_fcu_untilted(1) = res.value().vector.y;
       } else {
         RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "[Se3Controller]: could not transform the velocity error to fcu_untilted");
       }
