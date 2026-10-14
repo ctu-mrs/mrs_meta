@@ -189,6 +189,13 @@ def generate_launch_description():
             ("~/map_delay_out", "~/map_delay"),
             # services in
             ("~/set_world_origin_in", "~/set_world_origin"),
+            ("~/is_world_origin_ready_in", "~/is_world_origin_ready"),
+            # services out
+            ("~/set_world_origin_out", "estimation_manager/set_world_origin"),
+        ],
+
+        extra_arguments=[
+            {'use_intra_process_comms': True}
         ],
     )
 
@@ -208,13 +215,12 @@ def generate_launch_description():
         namespace=uav_name,
         name=namespace+'_container',
         package='rclcpp_components',
-        executable='component_container_mt',
+        executable='component_container_events_cbg',
         output="screen",
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
         # prefix=['debug_roslaunch ' + os.ttyname(sys.stdout.fileno())],
         composable_node_descriptions=[transform_manager_node],
         parameters=[
-            {'use_intra_process_comms': True},
             {'thread_num': os.cpu_count()},
             {'use_sim_time': use_sim_time},
         ],
@@ -224,16 +230,5 @@ def generate_launch_description():
     ld.add_action(standalone_container)
 
     # #} end of own container
-
-    ld.add_action(
-        # Nodes under test
-        launch_ros.actions.Node(
-            package='tf2_ros',
-            namespace='',
-            executable='static_transform_publisher',
-            name='fcu_to_rtk_antenna',
-            arguments=["0.0", "0.0", "0.20", "0", "0", "0", [uav_name, "/fcu"], [uav_name, "/rtk_antenna"]],
-        )
-    )
 
     return ld

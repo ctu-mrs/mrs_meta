@@ -112,7 +112,11 @@ namespace mrs_lib
           if (msg.type == errorgraph_error_msg_t::TYPE_WAITING_FOR_NODE)
             waited_for_node = node_id_t::from_msg(msg.waited_for_node);
           else if (msg.type == errorgraph_error_msg_t::TYPE_WAITING_FOR_TOPIC)
+          {
             waited_for_topic = msg.waited_for_topic;
+            if (!msg.waited_for_node.node.empty() || !msg.waited_for_node.component.empty())
+              waited_for_node = node_id_t::from_msg(msg.waited_for_node);
+          }
           stamp = msg.stamp;
         }
 
@@ -221,8 +225,12 @@ namespace mrs_lib
 
         /// \brief Construct a topic element.
         element_t(size_t element_id, const std::string& topic_name, const node_id_t& source_node, rclcpp::Clock::SharedPtr clock)
-            : element_id(element_id), type(type_t::topic), topic_name(topic_name), source_node(source_node),
-              stamp(static_cast<int64_t>(0), clock->get_clock_type()), clock_(clock){};
+            : element_id(element_id),
+              type(type_t::topic),
+              topic_name(topic_name),
+              source_node(source_node),
+              stamp(static_cast<int64_t>(0), clock->get_clock_type()),
+              clock_(clock){};
 
         /// \brief Returns pointers to topic names this element is waiting for.
         inline std::vector<const std::string*> waited_for_topics() const

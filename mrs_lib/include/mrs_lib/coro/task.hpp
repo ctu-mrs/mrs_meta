@@ -9,8 +9,10 @@
 #include <type_traits>
 #include <utility>
 
-#include <mrs_lib/coro/internal/attributes.hpp>
-#include <variant>
+#include "mrs_lib/coro/internal/attributes.hpp"
+#include "mrs_lib/coro/internal/continuation.hpp"
+#include "mrs_lib/coro/internal/result_storage.hpp"
+#include "mrs_lib/coro/internal/thread_local_continuation_scheduler.hpp"
 
 // Note on ownership semantics:
 // Since we want to support cancellation at any point in the coroutine stacks,
@@ -19,7 +21,7 @@
 // either suspend and become continuation of some other task thus transferring
 // ownership or destruct itself once completed.
 
-namespace mrs_lib
+namespace mrs_lib::coro
 {
 
   template <typename T = void>
@@ -97,6 +99,7 @@ namespace mrs_lib
 
         // SYMMETRIC TRANSFER IS BROKEN IN GCC and can result in stack
         // overflow when many tasks complete synchronously.
+        // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100897
         // Because of this problem, the `await_suspend` uses the void signature
         // and resumes the continuation on a thread-local scheduler as a workaround.
         void await_suspend(std::coroutine_handle<Derived> task_handle) noexcept;
@@ -111,75 +114,20 @@ namespace mrs_lib
       // The coroutine will be suspended and the continuation will be resumed
       FinalAwaitable final_suspend() noexcept;
 
-      void set_continuation(OwningCoroutineHandle<> continuation);
+      void set_continuation(CancellableContinuation continuation);
 
-    private:
-      OwningCoroutineHandle<> continuation_{std::noop_coroutine()};
-    };
-
-    /**
-     * @brief A variant-like class for storing the result of non-void task.
-     */
-    template <typename T>
-    class ResultStorage
-    {
-    private:
-      // Not enum class to allow usage in functions like std::get
-      enum State : size_t
+      CancellableContinuation release_continuation()
       {
-        empty = 0,
-        value = 1,
-        exception = 2,
-      };
-
-    public:
-      constexpr ResultStorage() noexcept : data_()
-      {
+        return std::exchange(continuation_, {});
       }
 
-      /**
-       * @brief Store result of task.
-       *
-       * This can only ve called once and not if set_exception was called.
-       */
-      constexpr void set_value(T&& val) noexcept(std::is_nothrow_move_constructible_v<T>)
+      std::stop_token get_token() const
       {
-        assert(data_.index() == State::empty);
-        data_.template emplace<State::value>(std::move(val));
-      }
-
-      /**
-       * @brief Store exception into the result.
-       *
-       * This can only ve called once and not if set_value was called.
-       */
-      void set_exception(std::exception_ptr eptr) noexcept
-      {
-        assert(data_.index() == State::empty || data_.valueless_by_exception());
-        data_.template emplace<State::exception>(std::move(eptr));
-      }
-
-      /**
-       * @brief Get previously stored result or exception.
-       *
-       * If this result contains a value, it is returned. Otherwise, if there is
-       * an exception stored, it is thrown.
-       *
-       * Either set_value or set_exception must be called before calling this.
-       */
-      constexpr T get_value() &&
-      {
-        size_t state = data_.index();
-        if (state == State::exception)
-        {
-          std::rethrow_exception(std::get<State::exception>(data_));
-        }
-        assert(state == State::value);
-        return std::get<State::value>(std::move(data_));
+        return continuation_.get_token();
       }
 
     private:
-      std::variant<std::monostate, T, std::exception_ptr> data_;
+      CancellableContinuation continuation_;
     };
 
     /**
@@ -233,6 +181,21 @@ namespace mrs_lib
       std::exception_ptr exception_;
     };
 
+    template <typename T>
+    struct CancellableContinuationFor<PromiseType<T>>
+    {
+      static CancellableContinuation release_continuation(std::coroutine_handle<PromiseType<T>> handle)
+      {
+        PromiseType<T>& promise = handle.promise();
+        return promise.release_continuation();
+      };
+
+      static std::stop_token get_token(std::coroutine_handle<PromiseType<T>> handle)
+      {
+        return handle.promise().get_token();
+      }
+    };
+
     /**
      * @brief Awaitable used to co_await other tasks.
      *
@@ -250,10 +213,16 @@ namespace mrs_lib
         return false;
       }
 
-      std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation)
+      // SYMMETRIC TRANSFER IS BROKEN IN GCC and can result in stack
+      // overflow when many tasks complete synchronously.
+      // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100897
+      // Because of this problem, the `await_suspend` uses the void signature
+      // and resumes the continuation on a thread-local scheduler as a workaround.
+      template <typename CallerPromise>
+      void await_suspend(std::coroutine_handle<CallerPromise> continuation)
       {
-        task_handle_.promise().set_continuation(OwningCoroutineHandle<>(continuation));
-        return task_handle_;
+        task_handle_.promise().set_continuation(CancellableContinuation(continuation));
+        schedule_coroutine_continuation(task_handle_);
       }
 
       T await_resume()
@@ -267,6 +236,11 @@ namespace mrs_lib
       TaskAwaitable& operator=(const TaskAwaitable&) = delete;
       TaskAwaitable(TaskAwaitable&&) = delete;
       TaskAwaitable& operator=(TaskAwaitable&&) = delete;
+
+      // This type should only be awaitable when directly returned from the
+      // co_await operator of Task. This prevents it from being awaitable when
+      // not returned from co_await operator.
+      void operator co_await() const = delete;
 
     private:
       TaskAwaitable(std::coroutine_handle<Promise> task_handle) : task_handle_(task_handle)
@@ -290,7 +264,7 @@ namespace mrs_lib
    */
   template <typename T>
     requires(std::same_as<T, std::remove_cvref_t<T>>)
-  class [[nodiscard("Task is lazy and does not run until `co_await`ed.")]] MRS_LIB_INTERNAL_CORO_RETURN_TYPE MRS_LIB_INTERNAL_CORO_LIFETIMEBOUND Task
+  class [[nodiscard("Task is lazy and does not run until `co_await`ed.")]] Task
   {
   public:
     using promise_type = internal::PromiseType<T>;
@@ -307,7 +281,7 @@ namespace mrs_lib
     }
 
   private:
-    Task(internal::OwningCoroutineHandle<promise_type> coroutine) : coroutine_(std::move(coroutine))
+    explicit Task(internal::OwningCoroutineHandle<promise_type> coroutine) : coroutine_(std::move(coroutine))
     {
     }
 
@@ -316,10 +290,18 @@ namespace mrs_lib
     friend class internal::PromiseType<T>;
   };
 
+} // namespace mrs_lib::coro
+
+namespace mrs_lib
+{
+  // Export mrs_lib::coro::Task directly into mrs_lib namespace since it is
+  // likely to be used often.
+  using coro::Task;
+
 } // namespace mrs_lib
 
 #ifndef MRS_LIB_CORO_TASK_IMPL_HPP_
-#include <mrs_lib/coro/task.impl.hpp> // IWYU pragma: export
+#include "mrs_lib/coro/task.impl.hpp" // IWYU pragma: export
 #endif
 
 #endif // MRS_LIB_CORO_TASK_HPP_

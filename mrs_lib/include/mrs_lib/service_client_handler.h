@@ -15,15 +15,6 @@
 
 namespace mrs_lib
 {
-  template <class ServiceType>
-  class ServiceClientHandler;
-
-  namespace internal
-  {
-    template <typename ServiceType>
-      requires(rosidl_generator_traits::is_service<ServiceType>::value)
-    class [[nodiscard("This service call is only performed when `co_await`ed.")]] ServiceAwaitable;
-  }
 
   /* class ServiceClientHandler //{ */
 
@@ -46,7 +37,7 @@ namespace mrs_lib
      * @param address         Name of the service.
      * @param qos QOS         Communication quality of service profile.
      */
-    ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos = rclcpp::ServicesQoS());
+    ServiceClientHandler(const rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos = rclcpp::ServicesQoS());
 
     /*!
      * @brief Default constructor to avoid having to use pointers.
@@ -66,7 +57,7 @@ namespace mrs_lib
      * @param qos QOS         Communication quality of service profile.
      * @param callback_group  Callback group used internally by the node for the response callback. Set to nullptr to use the default one.
      */
-    ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos,
+    ServiceClientHandler(const rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::QoS& qos,
                          const rclcpp::CallbackGroup::SharedPtr& callback_group);
 
     /**
@@ -78,7 +69,7 @@ namespace mrs_lib
      * @param address         Name of the service.
      * @param callback_group  Callback group used internally by the node for the response callback. Set to nullptr to use the default one.
      */
-    ServiceClientHandler(rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::CallbackGroup::SharedPtr& callback_group);
+    ServiceClientHandler(const rclcpp::Node::SharedPtr& node, const std::string& address, const rclcpp::CallbackGroup::SharedPtr& callback_group);
 
     /**
      * @brief Synchronous (blocking) call of the service.
@@ -147,6 +138,18 @@ namespace mrs_lib
      * @return true if the service is available, false otherwise
      */
     bool isServiceReady() const;
+
+    /**
+     * @brief Clean all pending requests.
+     *
+     * @return number of pending requests that were removed
+     *
+     * @warning
+     * Calling this will not wake up threads that are waiting on @ref callSync or future.get.
+     * These threads will be deadlocked, unless woken by some other means.
+     * Coroutines waiting on @ref callAwaitable will be cancelled.
+     */
+    size_t prunePendingRequests();
 
   private:
     class Impl;

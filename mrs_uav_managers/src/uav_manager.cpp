@@ -184,6 +184,7 @@ public:
   mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>             sch_ungrip_;
   mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>             sch_toggle_control_output_;
   mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>             sch_offboard_;
+  mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>             sch_is_world_origin_ready_;
 
   // service client wrappers
   bool takeoffSrv(void);
@@ -373,6 +374,9 @@ void UavManager::initialize() {
 
   RCLCPP_INFO(node_->get_logger(), "initializing");
 
+  auto use_intra = node_->get_node_options().use_intra_process_comms();
+  RCLCPP_INFO(node_->get_logger(), "Intra-process comms is: %s", use_intra ? "ON" : "OFF");
+
   mrs_lib::ParamLoader param_loader(node_);
 
   std::string custom_config_path;
@@ -391,37 +395,37 @@ void UavManager::initialize() {
   if (custom_config_path != "") {
     if (!param_loader.addYamlFile(custom_config_path)) {
       RCLCPP_ERROR(node_->get_logger(), "failed to load custom_config");
-      rclcpp::shutdown();
-      exit(1);
+      error_publisher_->addOneshotError("failed to load custom_config");
+      error_publisher_->flushAndShutdown();
     }
   }
 
   if (platform_config_path != "") {
     if (!param_loader.addYamlFile(platform_config_path)) {
       RCLCPP_ERROR(node_->get_logger(), "failed to load platform_config");
-      rclcpp::shutdown();
-      exit(1);
+      error_publisher_->addOneshotError("failed to load platform_config");
+      error_publisher_->flushAndShutdown();
     }
   }
 
   if (world_config_path != "") {
     if (!param_loader.addYamlFile(world_config_path)) {
       RCLCPP_ERROR(node_->get_logger(), "failed to load world_config");
-      rclcpp::shutdown();
-      exit(1);
+      error_publisher_->addOneshotError("failed to load world_config");
+      error_publisher_->flushAndShutdown();
     }
   }
 
   if (!param_loader.addYamlFileFromParam("private_config")) {
     RCLCPP_ERROR(node_->get_logger(), "failed to load private_config");
-    rclcpp::shutdown();
-    exit(1);
+    error_publisher_->addOneshotError("failed to load private_config");
+    error_publisher_->flushAndShutdown();
   }
 
   if (!param_loader.addYamlFileFromParam("public_config")) {
     RCLCPP_ERROR(node_->get_logger(), "failed to load public_config");
-    rclcpp::shutdown();
-    exit(1);
+    error_publisher_->addOneshotError("failed to load public_config");
+    error_publisher_->flushAndShutdown();
   }
 
   const std::string yaml_prefix = "mrs_uav_managers/uav_manager/";
@@ -585,6 +589,7 @@ void UavManager::initialize() {
   sch_ungrip_                = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/ungrip_out", cbkgrp_sc_);
   sch_toggle_control_output_ = mrs_lib::ServiceClientHandler<std_srvs::srv::SetBool>(node_, "~/toggle_control_output_out", cbkgrp_sc_);
   sch_offboard_              = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/offboard_out", cbkgrp_sc_);
+  sch_is_world_origin_ready_ = mrs_lib::ServiceClientHandler<std_srvs::srv::Trigger>(node_, "~/is_world_origin_ready_out", cbkgrp_sc_);
 
   // | ---------------------- state machine --------------------- |
 
@@ -1544,6 +1549,19 @@ bool UavManager::callbackTakeoff([[maybe_unused]] const std::shared_ptr<std_srvs
       return true;
     }
 
+    {
+      auto res = sch_is_world_origin_ready_.callSync(std::make_shared<std_srvs::srv::Trigger::Request>());
+
+      if (!res || !res.value()->success) {
+        ss << "can not takeoff, world_origin is not ready yet!";
+        RCLCPP_ERROR_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+        error_publisher_->addWaitingForNodeError({"TransformManager", "main"});
+        response->message = ss.str();
+        response->success = false;
+        return true;
+      }
+    }
+
     if (!sh_hw_api_status_.hasMsg() || (clock_->now() - sh_hw_api_status_.lastMsgTime()).seconds() > 5.0) {
       ss << "can not takeoff, missing HW API status!";
       RCLCPP_ERROR_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
@@ -2185,6 +2203,19 @@ bool UavManager::callbackMidairActivation([[maybe_unused]] const std::shared_ptr
       response->message = ss.str();
       response->success = false;
       return true;
+    }
+
+    {
+      auto res = sch_is_world_origin_ready_.callSync(std::make_shared<std_srvs::srv::Trigger::Request>());
+
+      if (!res || !res.value()->success) {
+        ss << "can not activate, world_origin is not ready yet!";
+        RCLCPP_ERROR_STREAM_THROTTLE(node_->get_logger(), *clock_, 1000, "" << ss.str());
+        error_publisher_->addWaitingForNodeError({"TransformManager", "main"});
+        response->message = ss.str();
+        response->success = false;
+        return true;
+      }
     }
 
     if (!sh_hw_api_status_.hasMsg() || (clock_->now() - sh_hw_api_status_.lastMsgTime()).seconds() > 5.0) {

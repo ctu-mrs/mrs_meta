@@ -46,9 +46,16 @@ protected:
     executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     executor_->add_node(node_);
 
+    finished_promise_ = std::promise<bool>();
     finished_future_ = finished_promise_.get_future();
 
     main_thread_ = std::thread(&Test::spin, this);
+
+    finished_future_.wait();
+
+    node_->get_clock()->sleep_for(1s);
+
+    RCLCPP_INFO(node_->get_logger(), "test initialized");
   }
 
   //}
@@ -59,6 +66,8 @@ protected:
   {
 
     RCLCPP_INFO(node_->get_logger(), "starting spinning");
+
+    finished_promise_.set_value(true);
 
     executor_->spin();
 
@@ -71,7 +80,11 @@ protected:
 
   void despin()
   {
+    RCLCPP_INFO(node_->get_logger(), "canceling executor");
+
     executor_->cancel();
+
+    RCLCPP_INFO(node_->get_logger(), "executor canceled");
 
     main_thread_.join();
   }
@@ -103,13 +116,19 @@ TEST_F(Test, param_provider_declare)
   const auto name = "test_int";
   int test_int = -666;
 
+  RCLCPP_INFO(node_->get_logger(), "test part 1");
+
   EXPECT_FALSE(pp.getParam(name, test_int));
   EXPECT_EQ(test_int, -666);
   EXPECT_FALSE(node_->has_parameter(name));
 
+  RCLCPP_INFO(node_->get_logger(), "test part 2");
+
   int init_value = 1;
   EXPECT_TRUE(pp.declareParam(name, init_value));
   EXPECT_TRUE(node_->has_parameter(name));
+
+  RCLCPP_INFO(node_->get_logger(), "test part 3");
 
   EXPECT_FALSE(pp.setParam(name, 13.4f));
   EXPECT_TRUE(pp.getParam(name, test_int));
@@ -204,6 +223,41 @@ TEST_F(Test, param_provider_set)
   EXPECT_TRUE(pp.setParam(name_raw, 66));
   EXPECT_TRUE(pp.getParam(name_raw, test_int));
   EXPECT_EQ(test_int, 66);
+
+  despin();
+
+  clock->sleep_for(1s);
+}
+
+//}
+
+/* TEST_F(Test, param_provider_get_param_result) //{ */
+
+TEST_F(Test, param_provider_get_param_result)
+{
+
+  initialize(rclcpp::NodeOptions().use_intra_process_comms(false));
+
+  auto clock = node_->get_clock();
+
+  auto pp = mrs_lib::ParamProvider(node_, false);
+  EXPECT_TRUE(pp.addYamlFile(test_resources_path.string() + "/test_config.yaml"));
+
+  int loaded_value = 0;
+  EXPECT_EQ(pp.getParamResult("param_provider/test_int", loaded_value), mrs_lib::ParamProvider::get_result_t::LOADED);
+  EXPECT_EQ(loaded_value, 666);
+
+  int defaulted_value = 0;
+  const auto default_opts = mrs_lib::ParamProvider::get_options_t<int>{.declare_options = {.default_value = 42}};
+  EXPECT_EQ(pp.getParamResult("param_provider/nonexistent_param", defaulted_value, default_opts), mrs_lib::ParamProvider::get_result_t::DEFAULT);
+  EXPECT_EQ(defaulted_value, 42);
+  EXPECT_TRUE(pp.getParam(pp.resolveName("param_provider/nonexistent_param"), defaulted_value, default_opts));
+  EXPECT_EQ(defaulted_value, 42);
+
+  int missing_value = -1;
+  EXPECT_EQ(pp.getParamResult("param_provider/nonexistent_param_without_default", missing_value), mrs_lib::ParamProvider::get_result_t::FAILED);
+  EXPECT_FALSE(pp.getParam("param_provider/nonexistent_param_without_default", missing_value));
+  EXPECT_EQ(missing_value, -1);
 
   despin();
 

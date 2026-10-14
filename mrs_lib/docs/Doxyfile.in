@@ -1,0 +1,56 @@
+# Doxyfile 1.9.8
+
+# This file describes the settings to be used by the documentation system
+# doxygen (www.doxygen.org) for a project.
+#
+# All text after a double hash (##) is considered a comment and is placed in
+# front of the TAG it is preceding.
+#
+# All text after a single hash (#) is considered a comment and will be ignored.
+# The format is:
+# TAG = value [value, ...]
+# For lists, items can also be appended using:
+# TAG += value [value, ...]
+# Values that contain spaces should be placed between quotes (\" \").
+#
+# Note:
+#
+# Use doxygen to compare the used configuration file with the template
+# configuration file:
+# doxygen -x [configFile]
+# Use doxygen to compare the used configuration file with the template
+# configuration file without replacing the environment variables or CMake type
+# replacement variables:
+# doxygen -x_noenv [configFile]
+
+PROJECT_NAME           = mrs_lib
+PROJECT_BRIEF          = "Various reusable classes, functions and utilities for use in MRS projects"
+PROJECT_LOGO           = .fig/mrs_logo.png
+OUTPUT_DIRECTORY       = @DOXYGEN_OUTPUT_DIRECTORY@
+
+ABBREVIATE_BRIEF       =
+CASE_SENSE_NAMES       = YES
+LAYOUT_FILE            = DoxygenLayout.xml
+CITE_BIB_FILES         = citations.bib
+INPUT                  = @PROJECT_SOURCE_DIR@/../
+FILE_PATTERNS          =
+RECURSIVE              = YES
+EXAMPLE_PATH           = .
+EXAMPLE_PATTERNS       =
+USE_MDFILE_AS_MAINPAGE = README.md
+HTML_OUTPUT            = @DOXYGEN_HTML_OUTPUT@
+HTML_DYNAMIC_SECTIONS  = YES
+GENERATE_TREEVIEW      = YES
+MATHJAX_RELPATH        = http://cdn.mathjax.org/mathjax/latest
+LATEX_CMD_NAME         = latex
+GENERATE_XML           = yes
+XML_OUTPUT             = @DOXYGEN_XML_OUTPUT@
+
+MACRO_EXPANSION    = YES
+EXPAND_ONLY_PREDEF = YES
+
+EXPAND_AS_DEFINED += MRS_LIB_GENERATE_FOR_ALL_LEVELS_EXPAND
+EXPAND_AS_DEFINED += MRS_LIB_GENERATE_FOR_ALL_LEVELS
+EXPAND_AS_DEFINED += MRS_LIB_GEN_LOG
+EXPAND_AS_DEFINED += MRS_LIB_GEN_LOG_ONCE
+EXPAND_AS_DEFINED += MRS_LIB_GEN_LOG_THROTTLE

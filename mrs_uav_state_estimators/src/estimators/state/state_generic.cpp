@@ -39,8 +39,19 @@ void StateGeneric::initialize(const rclcpp::Node::SharedPtr &node, const std::sh
 
   if (is_core_plugin_) {
 
-    ph->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory(package_name_) + "/config/private/" + getName() + "/" + getName() + ".yaml");
-    ph->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory(package_name_) + "/config/public/" + getName() + "/" + getName() + ".yaml");
+    if (!ph->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory(package_name_) + "/config/private/" + getName() + "/" + getName() +
+                                       ".yaml")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load the private config file", getPrintName().c_str());
+      error_publisher_->addOneshotError("failed to load the private config file");
+      error_publisher_->flushAndShutdown();
+    }
+
+    if (!ph->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory(package_name_) + "/config/public/" + getName() + "/" + getName() +
+                                       ".yaml")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load the public config file", getPrintName().c_str());
+      error_publisher_->addOneshotError("failed to load the public config file");
+      error_publisher_->flushAndShutdown();
+    }
   }
 
   ph->param_loader->loadParam("estimators/lateral/name", est_lat_name_);
@@ -231,13 +242,13 @@ bool StateGeneric::start(void) {
       return true;
     } else {
       if (!est_lat_start_successful) {
-        error_publisher_->addWaitingForNodeError({"EstimationManager", est_lat_->getName()});
+        error_publisher_->addWaitingForNodeError({"EstimationManager", est_lat_->getPrintName()});
       }
       if (!est_alt_start_successful) {
-        error_publisher_->addWaitingForNodeError({"EstimationManager", est_alt_->getName()});
+        error_publisher_->addWaitingForNodeError({"EstimationManager", est_alt_->getPrintName()});
       }
       if (!est_hdg_start_successful) {
-        error_publisher_->addWaitingForNodeError({"EstimationManager", est_hdg_->getName()});
+        error_publisher_->addWaitingForNodeError({"EstimationManager", est_hdg_->getPrintName()});
       }
     }
 
@@ -320,13 +331,13 @@ void StateGeneric::timerUpdate() {
         RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "[%s]: %s subestimators to be initialized", getPrintName().c_str(),
                              Support::waiting_for_string.c_str());
         if (!est_lat_->isInitialized()) {
-          error_publisher_->addWaitingForNodeError({"EstimationManager", est_lat_->getName()});
+          error_publisher_->addWaitingForNodeError({"EstimationManager", est_lat_->getPrintName()});
         }
         if (!est_alt_->isInitialized()) {
-          error_publisher_->addWaitingForNodeError({"EstimationManager", est_alt_->getName()});
+          error_publisher_->addWaitingForNodeError({"EstimationManager", est_alt_->getPrintName()});
         }
         if (!est_hdg_->isInitialized()) {
-          error_publisher_->addWaitingForNodeError({"EstimationManager", est_hdg_->getName()});
+          error_publisher_->addWaitingForNodeError({"EstimationManager", est_hdg_->getPrintName()});
         }
         return;
       }
@@ -357,13 +368,13 @@ void StateGeneric::timerUpdate() {
       changeState(RUNNING_STATE);
     } else {
       if (!est_lat_->isRunning()) {
-        error_publisher_->addWaitingForNodeError({"EstimationManager", est_lat_->getName()});
+        error_publisher_->addWaitingForNodeError({"EstimationManager", est_lat_->getPrintName()});
       }
       if (!est_alt_->isRunning()) {
-        error_publisher_->addWaitingForNodeError({"EstimationManager", est_alt_->getName()});
+        error_publisher_->addWaitingForNodeError({"EstimationManager", est_alt_->getPrintName()});
       }
       if (!est_hdg_->isRunning()) {
-        error_publisher_->addWaitingForNodeError({"EstimationManager", est_hdg_->getName()});
+        error_publisher_->addWaitingForNodeError({"EstimationManager", est_hdg_->getPrintName()});
       }
       return;
     }

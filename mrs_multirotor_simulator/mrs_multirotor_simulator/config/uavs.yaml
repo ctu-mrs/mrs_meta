@@ -1,0 +1,14 @@
+uav_names: [
+  "uav1",
+]
+
+uav1:
+  type: "x500"
+  spawn:
+    x: 10.0
+    y: 15.0
+    z: 0.0
+    heading: 3.14
+  # names of UavPlugins to attach (several can run at once); each needs a "<name>/address"
+  # entry elsewhere, e.g. boids: {address: "mrs_multirotor_simulator_plugins::BoidsUavPlugin"}
+  plugins: []

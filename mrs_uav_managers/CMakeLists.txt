@@ -56,11 +56,14 @@ set(LIBRARIES
   MrsUavManagers_EstimationManager
   MrsUavManagers_TransformManager
   MrsUavManagers_ControlManager
-  MrsUavManagers_NullTracker
   MrsUavManagers_UavManager
   MrsUavManagers_ConstraintManager
   MrsUavManagers_GainManager
   MrsUavManagers_SafetyAreaManager
+)
+
+set(PLUGINS
+  MrsUavManagers_NullTracker
 )
 
 ## --------------------------------------------------------------
@@ -100,7 +103,7 @@ target_link_libraries(MrsUavManagers_EstimationManager
 
 rclcpp_components_register_nodes(MrsUavManagers_EstimationManager "mrs_uav_managers::estimation_manager::EstimationManager")
 
-target_compile_definitions(MrsUavManagers_EstimationManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
+target_compile_definitions(MrsUavManagers_EstimationManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER} COVERAGE=${COVERAGE})
 
 # Transform Manager
 
@@ -132,7 +135,7 @@ target_link_libraries(MrsUavManagers_TransformManager
 
 rclcpp_components_register_nodes(MrsUavManagers_TransformManager "mrs_uav_managers::transform_manager::TransformManager")
 
-target_compile_definitions(MrsUavManagers_TransformManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
+target_compile_definitions(MrsUavManagers_TransformManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER} COVERAGE=${COVERAGE})
 
 # Control Manager
 
@@ -174,9 +177,13 @@ add_library(MrsUavManagers_SafetyAreaManager SHARED
   src/safety_area_manager.cpp
 )
 
+target_include_directories(MrsUavManagers_SafetyAreaManager
+  PRIVATE
+    "include"
+)
+
 target_link_libraries(MrsUavManagers_SafetyAreaManager
   PRIVATE
-    mrs_uav_managers::mrs_uav_managers
     rclcpp::rclcpp
     rclcpp_components::component
     mrs_lib::mrs_lib
@@ -194,7 +201,7 @@ target_link_libraries(MrsUavManagers_SafetyAreaManager
 
 rclcpp_components_register_nodes(MrsUavManagers_SafetyAreaManager "mrs_uav_managers::safety_area_manager::SafetyAreaManager")
 
-target_compile_definitions(MrsUavManagers_SafetyAreaManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
+target_compile_definitions(MrsUavManagers_SafetyAreaManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER} COVERAGE=${COVERAGE})
 
 # UAV Manager
 
@@ -226,7 +233,7 @@ target_link_libraries(MrsUavManagers_UavManager
 
 rclcpp_components_register_nodes(MrsUavManagers_UavManager "mrs_uav_managers::uav_manager::UavManager")
 
-target_compile_definitions(MrsUavManagers_UavManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
+target_compile_definitions(MrsUavManagers_UavManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER} COVERAGE=${COVERAGE})
 
 # Constraint Manager
 
@@ -258,7 +265,7 @@ target_link_libraries(MrsUavManagers_ConstraintManager
 
 rclcpp_components_register_nodes(MrsUavManagers_ConstraintManager "mrs_uav_managers::constraint_manager::ConstraintManager")
 
-target_compile_definitions(MrsUavManagers_ConstraintManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
+target_compile_definitions(MrsUavManagers_ConstraintManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER} COVERAGE=${COVERAGE})
 
 # Gain Manager
 
@@ -290,7 +297,7 @@ target_link_libraries(MrsUavManagers_GainManager
 
 rclcpp_components_register_nodes(MrsUavManagers_GainManager "mrs_uav_managers::gain_manager::GainManager")
 
-target_compile_definitions(MrsUavManagers_GainManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
+target_compile_definitions(MrsUavManagers_GainManager PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER} COVERAGE=${COVERAGE})
 
 # Null Tracker
 
@@ -320,7 +327,7 @@ target_link_libraries(MrsUavManagers_NullTracker
     ${tf2_geometry_msgs_TARGETS}
 )
 
-target_compile_definitions(MrsUavManagers_NullTracker PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER})
+target_compile_definitions(MrsUavManagers_NullTracker PRIVATE USE_ROS_TIMER=${USE_ROS_TIMER} COVERAGE=${COVERAGE})
 
 # Public interface of this library
 
@@ -367,10 +374,10 @@ target_link_libraries(MrsUavManagers_MrsUavManagers
     ${mrs_msgs_TARGETS}
     ${geometry_msgs_TARGETS}
     ${nav_msgs_TARGETS}
-    ${std_msgs}
-    ${sensor_msgs}
-    ${mrs_uav_hw_api}
-    ${visualization_msgs}
+    ${std_msgs_TARGETS}
+    ${sensor_msgs_TARGETS}
+    ${mrs_uav_hw_api_TARGETS}
+    ${visualization_msgs_TARGETS}
     ${tf2_geometry_msgs_TARGETS}
 )
 
@@ -409,6 +416,14 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
   FILE_SET HEADERS DESTINATION "include/${PROJECT_NAME}"
+)
+
+install(
+  TARGETS
+    ${PLUGINS}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 install(

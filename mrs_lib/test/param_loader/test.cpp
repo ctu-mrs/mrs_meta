@@ -46,9 +46,14 @@ protected:
     executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     executor_->add_node(node_);
 
+    finished_promise_ = std::promise<bool>();
     finished_future_ = finished_promise_.get_future();
 
     main_thread_ = std::thread(&Test::spin, this);
+
+    finished_future_.wait();
+
+    node_->get_clock()->sleep_for(1s);
   }
 
   //}
@@ -59,6 +64,8 @@ protected:
   {
 
     RCLCPP_INFO(node_->get_logger(), "starting spinning");
+
+    finished_promise_.set_value(true);
 
     executor_->spin();
 
@@ -112,6 +119,17 @@ TEST_F(Test, param_loader_load_from_file)
   pl.resetLoadedSuccessfully();
 
   EXPECT_TRUE(pl.addYamlFile(test_resources_path.string() + "/test_config.yaml"));
+
+  int optional_missing_with_default = -1;
+  EXPECT_FALSE(pl.loadParam("missing_optional_param", optional_missing_with_default, 42));
+  EXPECT_EQ(optional_missing_with_default, 42);
+  EXPECT_TRUE(pl.loadedSuccessfully());
+
+  int compulsory_missing = -1;
+  EXPECT_FALSE(pl.loadParam("missing_compulsory_param", compulsory_missing));
+  EXPECT_EQ(compulsory_missing, 0);
+  EXPECT_FALSE(pl.loadedSuccessfully());
+  pl.resetLoadedSuccessfully();
 
   std::vector<Eigen::MatrixXd> loaded_nd_matrix = pl.loadMatrixArray2("test_param_nd_matrix");
   EXPECT_TRUE(pl.loadedSuccessfully());

@@ -204,6 +204,10 @@ def generate_launch_description():
             ("~/uav_status_short_out", "~/uav_status_short"),
             ("~/profiler", "profiler"),
         ],
+
+        extra_arguments=[
+            {'use_intra_process_comms': True}
+        ],
     )
 
     load_into_existing = LoadComposableNodes(
@@ -222,7 +226,7 @@ def generate_launch_description():
         namespace=uav_name,
         name=namespace+'_container',
         package='rclcpp_components',
-        executable='component_container_mt',
+        executable='component_container_events_cbg',
         output="screen",
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
         # prefix=['debug_roslaunch ' + os.ttyname(sys.stdout.fileno())],

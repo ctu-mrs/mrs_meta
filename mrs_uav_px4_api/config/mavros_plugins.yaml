@@ -21,7 +21,10 @@
       # - landing_target
       # - mount_control
       # - onboard_computer_status
-      
+      # - geofence
+      # - nav_controller_output
+      # - rallypoint
+
       # # extras
       # - image_pub
       # - vibration
@@ -44,6 +47,17 @@
       # # - debug_value
       # - wind_estimation
       # - log_transfer
+      # - cellular_status
+      # - esc_status
+      # - esc_telemetry
+      # - gimbal_control
+      # - obstacle_distance_3d
+      # - open_drone_id
+      # - optical_flow
+      # - play_tune
+      # - sim_state
+      # - terrain
+      # - tunnel
 
     plugin_allowlist:
       # core
@@ -70,6 +84,6 @@
       - distance_sensor
       - gps_input
       - gps_rtk
-      # - gps_status
+      - gps_status
       - mag_calibration_status
       - odometry

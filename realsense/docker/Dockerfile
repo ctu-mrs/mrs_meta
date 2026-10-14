@@ -1,27 +1,15 @@
-ARG BASE_IMAGE=ctumrs/mrs_uav_system2:latest
 ARG PPA_VARIANT=unstable
+ARG BASE_IMAGE=ctumrs/mrs_uav_system_core:${PPA_VARIANT}
 
 FROM ${BASE_IMAGE}
 
-ARG PPA_VARIANT
-
-RUN apt-get -y update
-
-# workaround interractive prompts during apt installations
-RUN echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
-RUN DEBIAN_FRONTEND=noninteractive apt-get -y install keyboard-configuration
-
 # INSTALL the MRS UAV System
 
-RUN apt-get -y install software-properties-common curl bash
-
-RUN curl https://ctu-mrs.github.io/ppa2-${PPA_VARIANT}/add_ppa.sh | bash
-
-RUN apt-get -y install ros-jazzy-realsense2*
-RUN apt-get -y install ros-jazzy-mrs-realsense
-RUN apt-get -y install ros-jazzy-compressed-image-transport
-RUN apt-get -y install ros-jazzy-compressed-depth-image-transport
-
 COPY ros_entrypoint.sh /
+
+RUN apt-get update && apt-get -y install ros-${ROS_DISTRO}-realsense2* \
+    ros-${ROS_DISTRO}-mrs-realsense ros-${ROS_DISTRO}-compressed-image-transport \
+    ros-${ROS_DISTRO}-compressed-depth-image-transport && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 CMD ["/ros_entrypoint.sh"]

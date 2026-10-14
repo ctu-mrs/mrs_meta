@@ -325,12 +325,29 @@ bool MpcController::initialize(const rclcpp::Node::SharedPtr &node, std::shared_
 
   // | -------------------- loading my params ------------------- |
 
-  private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") + "/config/private/mpc_controller.yaml");
-  private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") + "/config/public/mpc_controller.yaml");
-  private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") + "/config/private/" +
-                                              private_handlers->name_space + ".yaml");
-  private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") + "/config/public/" +
-                                              private_handlers->name_space + ".yaml");
+  if (!private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") +
+                                                   "/config/private/mpc_controller.yaml")) {
+    RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load the private config file", name_.c_str());
+    return false;
+  }
+
+  if (!private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") +
+                                                   "/config/public/mpc_controller.yaml")) {
+    RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load the public config file", name_.c_str());
+    return false;
+  }
+
+  if (!private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") + "/config/private/" +
+                                                   private_handlers->name_space + ".yaml")) {
+    RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load the private namespace config file", name_.c_str());
+    return false;
+  }
+
+  if (!private_handlers->param_loader->addYamlFile(ament_index_cpp::get_package_share_directory("mrs_uav_controllers") + "/config/public/" +
+                                                   private_handlers->name_space + ".yaml")) {
+    RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load the public namespace config file", name_.c_str());
+    return false;
+  }
 
   dynparam_mgr_->get_param_provider().copyYamls(private_handlers->param_loader->getParamProvider());
 
@@ -1014,14 +1031,14 @@ void MpcController::MPC(const mrs_msgs::msg::UavState &uav_state, const mrs_msgs
     double velocity;
     double coef = 1.5;
 
-    if (std::abs(uav_state.acceleration.linear.z) < coef * max_acceleration_horizontal) {
+    if (std::abs(uav_state.acceleration.linear.z) < coef * max_acceleration_vertical) {
       acceleration = uav_state.acceleration.linear.z;
     } else {
       acceleration = tracker_command.acceleration.z;
 
       RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000,
                             "[%s]: odometry z acceleration exceeds constraints (%.2f > %.1f * %.2f m), using reference for initial condition", name_.c_str(),
-                            std::abs(uav_state.acceleration.linear.z), coef, max_acceleration_horizontal);
+                            std::abs(uav_state.acceleration.linear.z), coef, max_acceleration_vertical);
     }
 
     if (std::abs(uav_state.velocity.linear.z) < coef * max_speed_vertical) {
@@ -1329,7 +1346,7 @@ void MpcController::MPC(const mrs_msgs::msg::UavState &uav_state, const mrs_msgs
 
       if (res) {
         Ev_fcu_untilted(0) = res.value().vector.x;
-        Ev_fcu_untilted(1) = res.value().vector.x;
+        Ev_fcu_untilted(1) = res.value().vector.y;
       } else {
         RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "[%s]: could not transform the velocity error to fcu_untilted", name_.c_str());
       }
@@ -1514,7 +1531,16 @@ void MpcController::MPC(const mrs_msgs::msg::UavState &uav_state, const mrs_msgs
 
     } else if (tracker_command.use_position_vertical) {
 
-      uav_mass_difference_ += gains.km * Ep(2) * dt;
+      // antiwindup
+      double temp_gain = gains.km;
+
+      if (rampup_active_ ||
+          (std::abs(uav_state.velocity.linear.z) > 0.3 && ((Ep(2) > 0 && uav_state.velocity.linear.z > 0) || (Ep(2) < 0 && uav_state.velocity.linear.z < 0)))) {
+        temp_gain = 0;
+        RCLCPP_DEBUG_THROTTLE(node_->get_logger(), *clock_, 1000, "[%s]: anti-windup for the mass kicks in", this->name_.c_str());
+      }
+
+      uav_mass_difference_ += temp_gain * Ep(2) * dt;
 
     } else if (tracker_command.use_velocity_vertical) {
 
@@ -1522,7 +1548,7 @@ void MpcController::MPC(const mrs_msgs::msg::UavState &uav_state, const mrs_msgs
       double temp_gain = gains.km;
 
       if (rampup_active_ ||
-          (std::abs(uav_state.velocity.linear.z) > 0.3 && ((Ep(2) > 0 && uav_state.velocity.linear.z > 0) || (Ep(2) < 0 && uav_state.velocity.linear.z < 0)))) {
+          (std::abs(uav_state.velocity.linear.z) > 0.3 && ((Ev(2) > 0 && uav_state.velocity.linear.z > 0) || (Ev(2) < 0 && uav_state.velocity.linear.z < 0)))) {
         temp_gain = 0;
         RCLCPP_DEBUG_THROTTLE(node_->get_logger(), *clock_, 1000, "[%s]: anti-windup for the mass kicks in", this->name_.c_str());
       }

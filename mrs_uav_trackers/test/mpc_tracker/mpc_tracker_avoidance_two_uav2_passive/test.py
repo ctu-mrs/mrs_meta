@@ -18,8 +18,6 @@ from std_msgs.msg import Bool
 
 def generate_test_description():
 
-    SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
-
     ld = launch.LaunchDescription()
 
     uav_type="x500"
@@ -30,62 +28,18 @@ def generate_test_description():
 
     test_name = os.path.basename(launch_dir)
 
-    # ld.add_action(
-    #         launch_ros.actions.Node(
-    #             package='rmw_zenoh_cpp',
-    #             namespace='',
-    #             executable='rmw_zenohd',
-    #             name='zenoh_router',
-    #         )
-    #     )
+    current_rmw = os.environ.get('RMW_IMPLEMENTATION', '')
 
-    ld.add_action(
-        GroupAction([
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([
-                    PathJoinSubstitution([
-                        FindPackageShare('mrs_uav_testing'),
-                        'launch',
-                        'mrs_uav_system.launch.py'
-                        ])
-                    ]),
-                    launch_arguments={
-                        # 'run_automatic_start': "true",
-                        'uav_name': "uav1",
-                        'platform_config': platform_config,
-                        'world_config': launch_dir+"/config/world_config.yaml",
-                        'custom_config': launch_dir+"/config/custom_config_uav1.yaml",
-                        'network_config': launch_dir+"/config/network_config.yaml",
-                        # 'automatic_start_config': launch_dir+"/config/automatic_start.yaml",
-                    }.items()
-                )
-            ]
+    if current_rmw == 'rmw_zenoh_cpp':
+        ld.add_action(
+            launch_ros.actions.Node(
+                package='rmw_zenoh_cpp',
+                namespace='',
+                executable='rmw_zenohd',
+                name='zenoh_router',
+                output='screen'
+            )
         )
-    )
-
-    ld.add_action(
-        GroupAction([
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([
-                    PathJoinSubstitution([
-                        FindPackageShare('mrs_uav_testing'),
-                        'launch',
-                        'mrs_uav_system.launch.py'
-                        ])
-                    ]),
-                    launch_arguments={
-                        # 'run_automatic_start': "true",
-                        'uav_name': "uav2",
-                        'platform_config': platform_config,
-                        'world_config': launch_dir+"/config/world_config.yaml",
-                        'custom_config': launch_dir+"/config/custom_config_uav2.yaml",
-                        'network_config': launch_dir+"/config/network_config.yaml",
-                        # 'automatic_start_config': launch_dir+"/config/automatic_start.yaml",
-                    }.items()
-                )
-            ]
-        )
-    )
 
     ld.add_action(
         GroupAction([
@@ -137,6 +91,52 @@ def generate_test_description():
                     launch_arguments={
                         'custom_config': launch_dir+"/config/hw_api.yaml",
                         'uav_name': "uav2",
+                    }.items()
+                )
+            ]
+        )
+    )
+
+    ld.add_action(
+        GroupAction([
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource([
+                    PathJoinSubstitution([
+                        FindPackageShare('mrs_uav_testing'),
+                        'launch',
+                        'mrs_uav_system.launch.py'
+                        ])
+                    ]),
+                    launch_arguments={
+                        # 'run_automatic_start': "true",
+                        'uav_name': "uav1",
+                        'platform_config': platform_config,
+                        'world_config': launch_dir+"/config/world_config.yaml",
+                        'custom_config': launch_dir+"/config/custom_config_uav1.yaml",
+                        'network_config': launch_dir+"/config/network_config.yaml",
+                    }.items()
+                )
+            ]
+        )
+    )
+
+    ld.add_action(
+        GroupAction([
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource([
+                    PathJoinSubstitution([
+                        FindPackageShare('mrs_uav_testing'),
+                        'launch',
+                        'mrs_uav_system.launch.py'
+                        ])
+                    ]),
+                    launch_arguments={
+                        # 'run_automatic_start': "true",
+                        'uav_name': "uav2",
+                        'platform_config': platform_config,
+                        'world_config': launch_dir+"/config/world_config.yaml",
+                        'custom_config': launch_dir+"/config/custom_config_uav2.yaml",
+                        'network_config': launch_dir+"/config/network_config.yaml",
                     }.items()
                 )
             ]

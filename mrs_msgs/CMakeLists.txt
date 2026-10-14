@@ -53,6 +53,7 @@ set(msg_files
   msg/hw_api/HwApiControlGroupCmd.msg
   msg/hw_api/HwApiPositionCmd.msg
   msg/hw_api/HwApiRcChannels.msg
+  msg/hw_api/HwApiRcRssi.msg
   msg/hw_api/HwApiStatus.msg
   msg/hw_api/HwApiVelocityHdgCmd.msg
   msg/hw_api/HwApiVelocityHdgRateCmd.msg
@@ -63,11 +64,22 @@ set(msg_files
   msg/mpc_tracker/MpcTrackerDiagnostics.msg
   msg/mrs_gripper/GripperDiagnostics.msg
   msg/profiler/ProfilerUpdate.msg
-  msg/robot_diagnostics/UavDiagnostics.msg
   msg/se3_controller/Se3Gains.msg
   msg/speed_tracker/SpeedTrackerCommand.msg
   msg/stamped_msgs/BoolStamped.msg
   msg/stamped_msgs/UInt16Stamped.msg
+  msg/system_info/BatteryState.msg
+  msg/system_info/CollisionAvoidanceInfo.msg
+  msg/system_info/ControlInfo.msg
+  msg/system_info/CpuLoad.msg
+  msg/system_info/GeneralRobotInfo.msg
+  msg/system_info/OnboardComputerInfo.msg
+  msg/system_info/SensorInfo.msg
+  msg/system_info/SensorStatus.msg
+  msg/system_info/State.msg
+  msg/system_info/StateEstimationInfo.msg
+  msg/system_info/SystemHealthInfo.msg
+  msg/system_info/UavInfo.msg
   msg/trajectory_generation/Path.msg
   msg/trajectory_generation/PathWithVelocity.msg
   msg/trajectory_generation/ReferenceWithVelocity.msg
@@ -150,7 +162,7 @@ file(MAKE_DIRECTORY "${GEN_INTERFACE_BASE_DIR}/action")
 
 # Run the script to create the flat symlinks in the root msg/, srv/, and action/ folders
 execute_process(
-  COMMAND /bin/bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/link_msg_files.sh" "${GEN_INTERFACE_BASE_DIR}" ${msg_files} ${srv_files} ${action_files}
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/link_msg_files.sh" "${GEN_INTERFACE_BASE_DIR}" ${msg_files} ${srv_files} ${action_files}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   RESULT_VARIABLE SCRIPT_RESULT
   ERROR_VARIABLE SCRIPT_ERROR
@@ -171,7 +183,7 @@ find_program(ROSDOC2_EXECUTABLE rosdoc2)
 
 # Always register the manual docs target
 add_custom_target(docs
-    COMMAND /bin/bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_docs.sh" "${GEN_INTERFACE_BASE_DIR}"
+    COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_docs.sh" "${GEN_INTERFACE_BASE_DIR}"
     COMMENT "Generating documentation with rosdoc2..."
     VERBATIM
 )
@@ -209,6 +221,7 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 
 set(rosidl_files "")
 
@@ -229,7 +242,7 @@ endforeach()
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${rosidl_files}
-  DEPENDENCIES builtin_interfaces geometry_msgs std_msgs sensor_msgs std_srvs
+  DEPENDENCIES builtin_interfaces geometry_msgs std_msgs sensor_msgs std_srvs diagnostic_msgs
 )
 
 ## --------------------------------------------------------------

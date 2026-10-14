@@ -7,6 +7,8 @@
 #include <mrs_lib/subscriber_handler.h>
 #include <mrs_lib/publisher_handler.h>
 #include <mrs_lib/service_server_handler.h>
+#include <mrs_lib/service_client_handler.h>
+#include <mrs_lib/timer_handler.h>
 #include <mrs_lib/attitude_converter.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/transform_broadcaster.h>
@@ -18,6 +20,7 @@
 #include <mrs_msgs/msg/hw_api_altitude.hpp>
 #include <mrs_msgs/msg/rtk_gps.hpp>
 #include <mrs_msgs/srv/reference_stamped_srv.hpp>
+#include <std_srvs/srv/trigger.hpp>
 
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/static_transform_broadcaster.h>
@@ -27,6 +30,7 @@
 
 #include <nav_msgs/msg/odometry.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 
@@ -42,6 +46,16 @@
 /* using //{ */
 
 using namespace std::chrono_literals;
+
+//}
+
+/* typedefs //{ */
+
+#if USE_ROS_TIMER == 1
+typedef mrs_lib::ROSTimer TimerType;
+#else
+typedef mrs_lib::ThreadTimer TimerType;
+#endif
 
 //}
 
@@ -66,6 +80,8 @@ public:
   std::string getPrintName() const;
 
 private:
+  // | ---------------------- node & config ---------------------- |
+
   rclcpp::Node::SharedPtr  node_;
   rclcpp::Clock::SharedPtr clock_;
 
@@ -81,6 +97,8 @@ private:
   const std::string package_name_ = "mrs_uav_managers";
   const std::string nodelet_name_ = "TransformManager";
   const std::string name_         = "transform_manager";
+
+  // | ------------------ tf publishing config ------------------- |
 
   bool publish_fcu_untilted_tf_;
 
@@ -103,12 +121,46 @@ private:
   std::string ns_amsl_origin_child_frame_id_;
   bool        publish_amsl_origin_tf_;
 
-  std::string               world_origin_units_;
+  // | ------------------- static world_origin ------------------- |
+
   geometry_msgs::msg::Point world_origin_;
+  bool                      world_origin_use_home_position_;
 
   mrs_lib::ServiceServerHandler<mrs_msgs::srv::ReferenceStampedSrv> srvs_set_world_origin_;
   bool callbackSetWorldOrigin(const std::shared_ptr<mrs_msgs::srv::ReferenceStampedSrv::Request>  request,
                               const std::shared_ptr<mrs_msgs::srv::ReferenceStampedSrv::Response> response);
+
+  // | ------------- home-position world_origin push ------------ |
+
+  // With use_home_position the world origin is not known at startup, so the estimators come up on
+  // the configured (0, 0) origin and report full UTM coordinates. Once the first usable fix arrives
+  // the origin is pushed out through the existing runtime path - EstimationManager, which resets the
+  // estimators onto the new origin and forwards it back here and to SafetyAreaManager - and takeoff
+  // is gated on that round trip completing (is_world_origin_ready).
+  //
+  // The reset re-anchors every estimator's odometry frame, and anything holding a reference taken
+  // before it keeps describing the old frame unless it is dropped in callbackSetWorldOrigin. That
+  // has already caught TfSource::first_msg_, the local_origin latches (pose_first_ and its static
+  // tf) and the safety area, which is rebuilt around the new origin. Treat any new one-shot capture
+  // derived from the estimator frame as needing the same treatment.
+
+  void captureHomeWorldOrigin(const geometry_msgs::msg::Point &utm_origin);
+
+  mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv> srvch_set_world_origin_out_;
+
+  rclcpp::CallbackGroup::SharedPtr cbkgrp_timers_;
+  std::shared_ptr<TimerType>       timer_set_home_world_origin_;
+  void                             timerSetHomeWorldOrigin();
+
+  std::atomic<bool>                                                                                home_position_ready_     = false;
+  std::atomic<bool>                                                                                home_position_confirmed_ = false;
+  std::optional<std::shared_future<std::shared_ptr<mrs_msgs::srv::ReferenceStampedSrv::Response>>> home_position_pending_future_;
+
+  mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger> srvs_is_world_origin_ready_;
+  bool                                                  callbackIsWorldOriginReady(const std::shared_ptr<std_srvs::srv::Trigger::Request>  request,
+                                                                                   const std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+
+  // | ---------------- tf sources & broadcasting ---------------- |
 
   std::vector<std::string>               tf_source_names_, estimator_names_;
   std::vector<std::unique_ptr<TfSource>> tf_sources_;
@@ -126,14 +178,16 @@ private:
 
   std::unique_ptr<TfMappingOrigin> tf_mapping_origin_;
 
+  // | ----------------- subscribers & callbacks ----------------- |
+
   void timeoutCallback(const std::string &topic, const rclcpp::Time &last_msg);
 
   mrs_lib::SubscriberHandler<mrs_msgs::msg::UavState> sh_uav_state_;
   void                                                callbackUavState(const mrs_msgs::msg::UavState::ConstSharedPtr msg);
   std::string                                         first_frame_id_;
   std::string                                         last_frame_id_;
-  bool                                                is_first_frame_id_set_        = false;
-  bool                                                is_local_static_tf_published_ = false;
+  std::atomic_bool                                    is_first_frame_id_set_        = false;
+  std::atomic_bool                                    is_local_static_tf_published_ = false;
 
   mrs_lib::SubscriberHandler<mrs_msgs::msg::Float64Stamped> sh_height_agl_;
   void                                                      callbackHeightAgl(const mrs_msgs::msg::Float64Stamped::ConstSharedPtr msg);
@@ -152,6 +206,11 @@ private:
   void                                              callbackRtkGps(const mrs_msgs::msg::RtkGps::ConstSharedPtr msg);
 
   std::optional<geometry_msgs::msg::Pose> transformRtkToFcu(const geometry_msgs::msg::PoseStamped &pose_in) const;
+
+  bool isRtkUsed() const;
+  bool isGarminUsed() const;
+
+  // | ----------------- tf publishing routines ------------------ |
 
   void publishFcuUntiltedTf(const geometry_msgs::msg::QuaternionStamped::ConstSharedPtr msg);
 
@@ -201,6 +260,9 @@ void TransformManager::initialize() {
 
   RCLCPP_INFO(node_->get_logger(), "[%s]: initializing", getPrintName().c_str());
 
+  auto use_intra = node_->get_node_options().use_intra_process_comms();
+  RCLCPP_INFO(node_->get_logger(), "Intra-process comms is: %s", use_intra ? "ON" : "OFF");
+
   broadcaster_        = std::make_shared<mrs_lib::TransformBroadcaster>(node_);
   static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node_);
 
@@ -214,20 +276,46 @@ void TransformManager::initialize() {
   param_loader.loadParam("world_config", _world_config_);
 
   if (_custom_config_ != "") {
-    param_loader.addYamlFile(_custom_config_);
+    if (!param_loader.addYamlFile(_custom_config_)) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load custom_config", getPrintName().c_str());
+      error_publisher_->addOneshotError("failed to load custom_config");
+      error_publisher_->flushAndShutdown();
+    }
   }
 
   if (_platform_config_ != "") {
-    param_loader.addYamlFile(_platform_config_);
+    if (!param_loader.addYamlFile(_platform_config_)) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load platform_config", getPrintName().c_str());
+      error_publisher_->addOneshotError("failed to load platform_config");
+      error_publisher_->flushAndShutdown();
+    }
   }
 
   if (_world_config_ != "") {
-    param_loader.addYamlFile(_world_config_);
+    if (!param_loader.addYamlFile(_world_config_)) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load world_config", getPrintName().c_str());
+      error_publisher_->addOneshotError("failed to load world_config");
+      error_publisher_->flushAndShutdown();
+    }
   }
 
-  param_loader.addYamlFileFromParam("private_config");
-  param_loader.addYamlFileFromParam("public_config");
-  param_loader.addYamlFileFromParam("estimators_config");
+  if (!param_loader.addYamlFileFromParam("private_config")) {
+    RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load private_config", getPrintName().c_str());
+    error_publisher_->addOneshotError("failed to load private_config");
+    error_publisher_->flushAndShutdown();
+  }
+
+  if (!param_loader.addYamlFileFromParam("public_config")) {
+    RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load public_config", getPrintName().c_str());
+    error_publisher_->addOneshotError("failed to load public_config");
+    error_publisher_->flushAndShutdown();
+  }
+
+  if (!param_loader.addYamlFileFromParam("estimators_config")) {
+    RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load estimators_config", getPrintName().c_str());
+    error_publisher_->addOneshotError("failed to load estimators_config");
+    error_publisher_->flushAndShutdown();
+  }
 
   const std::string yaml_prefix = "mrs_uav_managers/transform_manager/";
 
@@ -242,46 +330,16 @@ void TransformManager::initialize() {
 
   /*//{ load world_origin parameters */
 
-  bool   is_origin_param_ok = true;
-  double world_origin_x     = 0;
-  double world_origin_y     = 0;
+  {
+    double world_origin_x = 0;
+    double world_origin_y = 0;
 
-  param_loader.loadParam("mrs_uav_managers/world_origin/units", world_origin_units_);
+    Support::loadWorldOrigin(param_loader, node_->get_logger(), error_publisher_, getPrintName(), world_origin_x, world_origin_y,
+                             world_origin_use_home_position_);
 
-  if (Support::toLowercase(world_origin_units_) == "utm") {
-
-    RCLCPP_INFO(node_->get_logger(), "[%s]: Loading world origin in UTM units.", getPrintName().c_str());
-
-    is_origin_param_ok &= param_loader.loadParam("mrs_uav_managers/world_origin/origin_x", world_origin_x);
-    is_origin_param_ok &= param_loader.loadParam("mrs_uav_managers/world_origin/origin_y", world_origin_y);
-
-  } else if (Support::toLowercase(world_origin_units_) == "latlon") {
-
-    RCLCPP_INFO(node_->get_logger(), "[%s]: Loading world origin in LatLon units.", getPrintName().c_str());
-
-    double lat, lon;
-    is_origin_param_ok &= param_loader.loadParam("mrs_uav_managers/world_origin/origin_x", lat);
-    is_origin_param_ok &= param_loader.loadParam("mrs_uav_managers/world_origin/origin_y", lon);
-
-    mrs_lib::UTM(lat, lon, &world_origin_x, &world_origin_y);
-
-    RCLCPP_INFO(node_->get_logger(), "[%s]: Converted to UTM x: %f, y: %f.", getPrintName().c_str(), world_origin_x, world_origin_y);
-
-  } else {
-    RCLCPP_ERROR(node_->get_logger(), "[%s]: mrs_uav_managers/world_origin/units must be (\"UTM\"|\"LATLON\"). Got '%s'", getPrintName().c_str(),
-                 world_origin_units_.c_str());
-    error_publisher_->addOneshotError("Invalid world_origin/units: must be 'UTM' or 'LATLON'.");
-    error_publisher_->flushAndShutdown();
-  }
-
-  world_origin_.x = world_origin_x;
-  world_origin_.y = world_origin_y;
-  world_origin_.z = 0;
-
-  if (!is_origin_param_ok) {
-    RCLCPP_ERROR(node_->get_logger(), "[%s]: Could not load all mandatory parameters from world file. Please check your world file.", getPrintName().c_str());
-    error_publisher_->addOneshotError("Could not load all mandatory parameters from world file.");
-    error_publisher_->flushAndShutdown();
+    world_origin_.x = world_origin_x;
+    world_origin_.y = world_origin_y;
+    world_origin_.z = 0;
   }
 
   /*//}*/
@@ -376,20 +434,46 @@ void TransformManager::initialize() {
     auto source_param_loader = std::make_shared<mrs_lib::ParamLoader>(node_, "TransformManager/" + tf_source_name);
 
     if (_custom_config_ != "") {
-      source_param_loader->addYamlFile(_custom_config_);
+      if (!source_param_loader->addYamlFile(_custom_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load custom_config for tf source '%s'", getPrintName().c_str(), tf_source_name.c_str());
+        error_publisher_->addOneshotError("failed to load custom_config for tf source '" + tf_source_name + "'");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
     if (_platform_config_ != "") {
-      source_param_loader->addYamlFile(_platform_config_);
+      if (!source_param_loader->addYamlFile(_platform_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load platform_config for tf source '%s'", getPrintName().c_str(), tf_source_name.c_str());
+        error_publisher_->addOneshotError("failed to load platform_config for tf source '" + tf_source_name + "'");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
     if (_world_config_ != "") {
-      source_param_loader->addYamlFile(_world_config_);
+      if (!source_param_loader->addYamlFile(_world_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load world_config for tf source '%s'", getPrintName().c_str(), tf_source_name.c_str());
+        error_publisher_->addOneshotError("failed to load world_config for tf source '" + tf_source_name + "'");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
-    source_param_loader->addYamlFileFromParam("private_config");
-    source_param_loader->addYamlFileFromParam("public_config");
-    source_param_loader->addYamlFileFromParam("estimators_config");
+    if (!source_param_loader->addYamlFileFromParam("private_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load private_config for tf source '%s'", getPrintName().c_str(), tf_source_name.c_str());
+      error_publisher_->addOneshotError("failed to load private_config for tf source '" + tf_source_name + "'");
+      error_publisher_->flushAndShutdown();
+    }
+
+    if (!source_param_loader->addYamlFileFromParam("public_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load public_config for tf source '%s'", getPrintName().c_str(), tf_source_name.c_str());
+      error_publisher_->addOneshotError("failed to load public_config for tf source '" + tf_source_name + "'");
+      error_publisher_->flushAndShutdown();
+    }
+
+    if (!source_param_loader->addYamlFileFromParam("estimators_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load estimators_config for tf source '%s'", getPrintName().c_str(), tf_source_name.c_str());
+      error_publisher_->addOneshotError("failed to load estimators_config for tf source '" + tf_source_name + "'");
+      error_publisher_->flushAndShutdown();
+    }
 
     tf_sources_.push_back(std::make_unique<TfSource>(tf_source_name, node_, source_param_loader, broadcaster_, ch_, is_utm_source));
   }
@@ -405,20 +489,46 @@ void TransformManager::initialize() {
     auto estimator_param_loader = std::make_shared<mrs_lib::ParamLoader>(node_, "TransformManager/" + estimator_name);
 
     if (_custom_config_ != "") {
-      estimator_param_loader->addYamlFile(_custom_config_);
+      if (!estimator_param_loader->addYamlFile(_custom_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load custom_config for estimator '%s'", getPrintName().c_str(), estimator_name.c_str());
+        error_publisher_->addOneshotError("failed to load custom_config for estimator '" + estimator_name + "'");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
     if (_platform_config_ != "") {
-      estimator_param_loader->addYamlFile(_platform_config_);
+      if (!estimator_param_loader->addYamlFile(_platform_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load platform_config for estimator '%s'", getPrintName().c_str(), estimator_name.c_str());
+        error_publisher_->addOneshotError("failed to load platform_config for estimator '" + estimator_name + "'");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
     if (_world_config_ != "") {
-      estimator_param_loader->addYamlFile(_world_config_);
+      if (!estimator_param_loader->addYamlFile(_world_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load world_config for estimator '%s'", getPrintName().c_str(), estimator_name.c_str());
+        error_publisher_->addOneshotError("failed to load world_config for estimator '" + estimator_name + "'");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
-    estimator_param_loader->addYamlFileFromParam("private_config");
-    estimator_param_loader->addYamlFileFromParam("public_config");
-    estimator_param_loader->addYamlFileFromParam("estimators_config");
+    if (!estimator_param_loader->addYamlFileFromParam("private_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load private_config for estimator '%s'", getPrintName().c_str(), estimator_name.c_str());
+      error_publisher_->addOneshotError("failed to load private_config for estimator '" + estimator_name + "'");
+      error_publisher_->flushAndShutdown();
+    }
+
+    if (!estimator_param_loader->addYamlFileFromParam("public_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load public_config for estimator '%s'", getPrintName().c_str(), estimator_name.c_str());
+      error_publisher_->addOneshotError("failed to load public_config for estimator '" + estimator_name + "'");
+      error_publisher_->flushAndShutdown();
+    }
+
+    if (!estimator_param_loader->addYamlFileFromParam("estimators_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load estimators_config for estimator '%s'", getPrintName().c_str(), estimator_name.c_str());
+      error_publisher_->addOneshotError("failed to load estimators_config for estimator '" + estimator_name + "'");
+      error_publisher_->flushAndShutdown();
+    }
 
     tf_sources_.push_back(std::make_unique<TfSource>(estimator_name, node_, estimator_param_loader, broadcaster_, ch_, is_utm_source));
   }
@@ -432,20 +542,46 @@ void TransformManager::initialize() {
     auto mapping_param_loader = std::make_shared<mrs_lib::ParamLoader>(node_, "TransformManager/mapping_origin_tf");
 
     if (_custom_config_ != "") {
-      mapping_param_loader->addYamlFile(_custom_config_);
+      if (!mapping_param_loader->addYamlFile(_custom_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load custom_config for mapping_origin_tf", getPrintName().c_str());
+        error_publisher_->addOneshotError("failed to load custom_config for mapping_origin_tf");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
     if (_platform_config_ != "") {
-      mapping_param_loader->addYamlFile(_platform_config_);
+      if (!mapping_param_loader->addYamlFile(_platform_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load platform_config for mapping_origin_tf", getPrintName().c_str());
+        error_publisher_->addOneshotError("failed to load platform_config for mapping_origin_tf");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
     if (_world_config_ != "") {
-      mapping_param_loader->addYamlFile(_world_config_);
+      if (!mapping_param_loader->addYamlFile(_world_config_)) {
+        RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load world_config for mapping_origin_tf", getPrintName().c_str());
+        error_publisher_->addOneshotError("failed to load world_config for mapping_origin_tf");
+        error_publisher_->flushAndShutdown();
+      }
     }
 
-    mapping_param_loader->addYamlFileFromParam("private_config");
-    mapping_param_loader->addYamlFileFromParam("public_config");
-    mapping_param_loader->addYamlFileFromParam("estimators_config");
+    if (!mapping_param_loader->addYamlFileFromParam("private_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load private_config for mapping_origin_tf", getPrintName().c_str());
+      error_publisher_->addOneshotError("failed to load private_config for mapping_origin_tf");
+      error_publisher_->flushAndShutdown();
+    }
+
+    if (!mapping_param_loader->addYamlFileFromParam("public_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load public_config for mapping_origin_tf", getPrintName().c_str());
+      error_publisher_->addOneshotError("failed to load public_config for mapping_origin_tf");
+      error_publisher_->flushAndShutdown();
+    }
+
+    if (!mapping_param_loader->addYamlFileFromParam("estimators_config")) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: failed to load estimators_config for mapping_origin_tf", getPrintName().c_str());
+      error_publisher_->addOneshotError("failed to load estimators_config for mapping_origin_tf");
+      error_publisher_->flushAndShutdown();
+    }
 
     tf_mapping_origin_ = std::make_unique<TfMappingOrigin>(node_, mapping_param_loader, broadcaster_, ch_);
   }
@@ -471,7 +607,7 @@ void TransformManager::initialize() {
   sh_hw_api_orientation_ =
       mrs_lib::SubscriberHandler<geometry_msgs::msg::QuaternionStamped>(shopts, "~/orientation_in", &TransformManager::callbackHwApiOrientation, this);
 
-  if (utm_source_name_ == "rtk" || utm_source_name_ == "rtk_garmin") {
+  if (isRtkUsed()) {
     sh_rtk_gps_ = mrs_lib::SubscriberHandler<mrs_msgs::msg::RtkGps>(shopts, "~/rtk_gps_in", &TransformManager::callbackRtkGps, this);
   } else {
     sh_gnss_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::NavSatFix>(shopts, "~/gnss_in", &TransformManager::callbackGnss, this);
@@ -482,6 +618,28 @@ void TransformManager::initialize() {
   srvs_set_world_origin_ = mrs_lib::ServiceServerHandler<mrs_msgs::srv::ReferenceStampedSrv>(
       node_, "~/set_world_origin_in", std::bind(&TransformManager::callbackSetWorldOrigin, this, std::placeholders::_1, std::placeholders::_2),
       rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+
+  srvs_is_world_origin_ready_ = mrs_lib::ServiceServerHandler<std_srvs::srv::Trigger>(
+      node_, "~/is_world_origin_ready_in", std::bind(&TransformManager::callbackIsWorldOriginReady, this, std::placeholders::_1, std::placeholders::_2),
+      rclcpp::SystemDefaultsQoS(), cbkgrp_ss_);
+  /*//}*/
+
+  /*//{ initialize home-position world_origin push */
+  if (world_origin_use_home_position_) {
+
+    srvch_set_world_origin_out_ = mrs_lib::ServiceClientHandler<mrs_msgs::srv::ReferenceStampedSrv>(node_, "~/set_world_origin_out");
+
+    cbkgrp_timers_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
+    mrs_lib::TimerHandlerOptions topts;
+    topts.node           = node_;
+    topts.autostart      = true;
+    topts.callback_group = cbkgrp_timers_;
+
+    std::function<void()> callback_fcn = std::bind(&TransformManager::timerSetHomeWorldOrigin, this);
+
+    timer_set_home_world_origin_ = std::make_shared<TimerType>(topts, rclcpp::Rate(1.0, clock_), callback_fcn);
+  }
   /*//}*/
 
   if (!param_loader.loadedSuccessfully()) {
@@ -490,24 +648,51 @@ void TransformManager::initialize() {
     error_publisher_->flushAndShutdown();
   }
 
-  // Check if the RTK antenna static tf is defined
-  bool got_rtk_antenna_tf = false;
-  for (int i = 0; i < 10; i++) {
-    auto res_tf_rtk = ch_->transformer->getTransform(ch_->frames.ns_rtk_antenna, ch_->frames.ns_fcu, clock_->now());
-    if (res_tf_rtk) {
-      RCLCPP_INFO(node_->get_logger(), "[%s] got tf from FCU to RTK antenna", getPrintName().c_str());
-      got_rtk_antenna_tf = true;
-      break;
+
+  if (isRtkUsed()) {
+    // Check if the RTK antenna static tf is defined
+    bool got_rtk_antenna_tf = false;
+    for (int i = 0; i < 20; i++) {
+      auto res_tf_rtk = ch_->transformer->getTransform(ch_->frames.ns_rtk_antenna, ch_->frames.ns_fcu, clock_->now());
+      if (res_tf_rtk) {
+        RCLCPP_INFO(node_->get_logger(), "[%s] got tf from FCU to RTK antenna", getPrintName().c_str());
+        got_rtk_antenna_tf = true;
+        break;
+      }
+      RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "[%s] %s tf from FCU to RTK antenna", getPrintName().c_str(),
+                           Support::waiting_for_string.c_str());
+      clock_->sleep_for(1.0s);
     }
-    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "[%s] %s tf from FCU to RTK antenna", getPrintName().c_str(), Support::waiting_for_string.c_str());
-    clock_->sleep_for(0.5s);
+
+    if (!got_rtk_antenna_tf) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: The transform from FCU to RTK antenna is not defined. Please provide static tf from %s to %s.",
+                   getPrintName().c_str(), ch_->frames.ns_fcu.c_str(), ch_->frames.ns_rtk_antenna.c_str());
+      error_publisher_->addOneshotError("RTK antenna TF not available.");
+      error_publisher_->flushAndShutdown();
+    }
   }
 
-  if (!got_rtk_antenna_tf) {
-    RCLCPP_ERROR(node_->get_logger(), "[%s]: The transform from FCU to RTK antenna is not defined. Please provide static tf from %s to %s.",
-                 getPrintName().c_str(), ch_->frames.ns_fcu.c_str(), ch_->frames.ns_rtk_antenna.c_str());
-    error_publisher_->addOneshotError("RTK antenna TF not available.");
-    error_publisher_->flushAndShutdown();
+  if (isGarminUsed()) {
+    // Check if the garmin static tf is defined
+    const std::string ns_garmin     = ch_->uav_name + "/garmin";
+    bool              got_garmin_tf = false;
+    for (int i = 0; i < 20; i++) {
+      auto res_tf_garmin = ch_->transformer->getTransform(ns_garmin, ch_->frames.ns_fcu, clock_->now());
+      if (res_tf_garmin) {
+        RCLCPP_INFO(node_->get_logger(), "[%s] got tf from FCU to GARMIN", getPrintName().c_str());
+        got_garmin_tf = true;
+        break;
+      }
+      RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 1000, "[%s] %s tf from FCU to GARMIN", getPrintName().c_str(), Support::waiting_for_string.c_str());
+      clock_->sleep_for(1.0s);
+    }
+
+    if (!got_garmin_tf) {
+      RCLCPP_ERROR(node_->get_logger(), "[%s]: The transform from FCU to GARMIN is not defined. Please provide static tf from %s to %s.",
+                   getPrintName().c_str(), ch_->frames.ns_fcu.c_str(), ns_garmin.c_str());
+      error_publisher_->addOneshotError("Garmin TF not available.");
+      error_publisher_->flushAndShutdown();
+    }
   }
 
   is_initialized_ = true;
@@ -823,6 +1008,11 @@ void TransformManager::callbackGnss(const sensor_msgs::msg::NavSatFix::ConstShar
     return;
   }
 
+  if (msg->status.status == sensor_msgs::msg::NavSatStatus::STATUS_NO_FIX) {
+    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 1000, "[%s]: NavSatFix has no GNSS fix!!!", getPrintName().c_str());
+    return;
+  }
+
   geometry_msgs::msg::Point utm_origin;
   utm_origin.x = out_x;
   utm_origin.y = out_y;
@@ -834,12 +1024,23 @@ void TransformManager::callbackGnss(const sensor_msgs::msg::NavSatFix::ConstShar
     return;
   }
 
+  // in home-position mode, pin the world_origin to this first usable fix
+  if (world_origin_use_home_position_) {
+    captureHomeWorldOrigin(utm_origin);
+  }
+
   RCLCPP_INFO(node_->get_logger(), "[%s]: utm_origin position calculated as: x: %.2f, y: %.2f, z: %.2f from GNSS", getPrintName().c_str(), utm_origin.x,
               utm_origin.y, utm_origin.z);
 
+  geometry_msgs::msg::Point world_origin;
+  {
+    std::scoped_lock lock(mtx_broadcast_world_origin_);
+    world_origin = world_origin_;
+  }
+
   for (size_t i = 0; i < tf_sources_.size(); i++) {
     tf_sources_[i]->setUtmOrigin(utm_origin);
-    tf_sources_[i]->setWorldOrigin(world_origin_);
+    tf_sources_[i]->setWorldOrigin(world_origin);
   }
 
   got_utm_offset_ = true;
@@ -908,12 +1109,23 @@ void TransformManager::callbackRtkGps(const mrs_msgs::msg::RtkGps::ConstSharedPt
     return;
   }
 
+  // in home-position mode, pin the world_origin to this first usable fix
+  if (world_origin_use_home_position_) {
+    captureHomeWorldOrigin(utm_origin);
+  }
+
   RCLCPP_INFO(node_->get_logger(), "[%s]: utm_origin position calculated as: x: %.2f, y: %.2f, z: %.2f from RTK msg", getPrintName().c_str(), utm_origin.x,
               utm_origin.y, utm_origin.z);
 
+  geometry_msgs::msg::Point world_origin;
+  {
+    std::scoped_lock lock(mtx_broadcast_world_origin_);
+    world_origin = world_origin_;
+  }
+
   for (size_t i = 0; i < tf_sources_.size(); i++) {
     tf_sources_[i]->setUtmOrigin(utm_origin);
-    tf_sources_[i]->setWorldOrigin(world_origin_);
+    tf_sources_[i]->setWorldOrigin(world_origin);
   }
 
   got_utm_offset_ = true;
@@ -953,7 +1165,15 @@ bool TransformManager::callbackSetWorldOrigin(const std::shared_ptr<mrs_msgs::sr
 
   for (size_t i = 0; i < tf_sources_.size(); i++) {
     tf_sources_[i]->setWorldOrigin(world_origin);
+    // the estimators are reset when the world origin changes, which re-anchors their odom frame;
+    // invalidate the stale reference so the utm/world tfs re-capture it in the new frame
+    tf_sources_[i]->invalidateFirstMsg();
   }
+
+  // local_origin is anchored to the first uav_state, which was received in the pre-reset frame; drop
+  // it so the next uav_state re-anchors it, otherwise the frame stays offset by the world origin
+  is_first_frame_id_set_        = false;
+  is_local_static_tf_published_ = false;
 
   response->success = true;
   response->message = "World origin set successfully";
@@ -961,6 +1181,94 @@ bool TransformManager::callbackSetWorldOrigin(const std::shared_ptr<mrs_msgs::sr
   return true;
 }
 /*//}*/
+
+/*//{ captureHomeWorldOrigin() */
+// Pins the world_origin to the first usable GNSS/RTK fix, so the UAV starts at (0, 0) in the
+// world_origin frame. The world_origin frame is therefore offset from utm_origin by exactly these
+// UTM coordinates of the home position.
+void TransformManager::captureHomeWorldOrigin(const geometry_msgs::msg::Point &utm_origin) {
+
+  {
+    std::scoped_lock lock(mtx_broadcast_world_origin_);
+    world_origin_.x = utm_origin.x;
+    world_origin_.y = utm_origin.y;
+    world_origin_.z = 0;
+  }
+
+  home_position_ready_ = true;
+}
+/*//}*/
+
+/*//{ timerSetHomeWorldOrigin() */
+void TransformManager::timerSetHomeWorldOrigin() {
+
+  if (home_position_confirmed_) {
+    timer_set_home_world_origin_->stop();
+    return;
+  }
+
+  if (!home_position_ready_) {
+    return;
+  }
+
+  if (home_position_pending_future_.has_value()) {
+
+    if (home_position_pending_future_->wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+      return;
+    }
+
+    const auto res = home_position_pending_future_->get();
+    home_position_pending_future_.reset();
+
+    if (res && res->success) {
+      RCLCPP_INFO(node_->get_logger(), "[%s]: home-position world_origin confirmed by EstimationManager", getPrintName().c_str());
+      home_position_confirmed_ = true;
+      timer_set_home_world_origin_->stop();
+      return;
+    }
+
+    RCLCPP_INFO_THROTTLE(node_->get_logger(), *clock_, 5000, "[%s]: %s EstimationManager to accept the home-position world_origin, retrying",
+                         getPrintName().c_str(), Support::waiting_for_string.c_str());
+  }
+
+  // the "home_position_" prefix marks this as the automated push so EstimationManager can tell it
+  // apart from an unrelated caller during the boot window when its callback guard is relaxed
+  auto request             = std::make_shared<mrs_msgs::srv::ReferenceStampedSrv::Request>();
+  request->header.frame_id = "home_position_utm_origin";
+
+  {
+    std::scoped_lock lock(mtx_broadcast_world_origin_);
+    request->reference.position.x = world_origin_.x;
+    request->reference.position.y = world_origin_.y;
+  }
+
+  home_position_pending_future_ = srvch_set_world_origin_out_.callAsync(request);
+}
+/*//}*/
+
+/*//{ callbackIsWorldOriginReady() */
+bool TransformManager::callbackIsWorldOriginReady([[maybe_unused]] const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+                                                  const std::shared_ptr<std_srvs::srv::Trigger::Response>                 response) {
+
+  response->success = !world_origin_use_home_position_ || home_position_confirmed_;
+  response->message = response->success ? "" : "waiting for home-position world_origin to be confirmed by EstimationManager";
+
+  return true;
+}
+/*//}*/
+
+/* isRtkUsed() //{ */
+bool TransformManager::isRtkUsed() const {
+  return utm_source_name_ == "rtk" || utm_source_name_ == "rtk_garmin";
+}
+//}
+
+/* isGarminUsed() //{ */
+bool TransformManager::isGarminUsed() const {
+  return std::any_of(estimator_names_.begin(), estimator_names_.end(),
+                     [](const std::string &estimator_name) { return estimator_name.find("garmin") != std::string::npos; });
+}
+//}
 
 /*//{ publishFcuUntiltedTf() */
 void TransformManager::publishFcuUntiltedTf(const geometry_msgs::msg::QuaternionStamped::ConstSharedPtr msg) {

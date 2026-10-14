@@ -91,7 +91,7 @@ You'll be prompted for the password of the `mrs` user and your public key will b
 
 ### Edit SSH config
 
-In `∼/.ssh/config` you can set aliases for ssh connections which will set the hostname, user and key used when connecting to them. You can set it on both your machines like this:
+In `~/.ssh/config` you can set aliases for ssh connections which will set the hostname, user and key used when connecting to them. You can set it on both your machines like this:
 
 ```bash
 host uav1
@@ -118,8 +118,8 @@ ssh uav1 'echo Hello from the drone!'
 Unless you also configure an ssh server on your machine, you won't be able to ssh to it from the drone. To copy files from the drone, you should instead run a command like this on your machine:
 
 ```bash
-scp -rPC uav1:/tmp/file.txt .
-rsync -azP uav1:/tmp/file.txt .
+scp -rpC uav1:/tmp/file.txt .
+rsync -avzP uav1:/tmp/file.txt .
 ```
 
 You may disable ssh password authentication for added security, more info about it [here](https://serverpilot.io/docs/guides/ssh/password-auth/).

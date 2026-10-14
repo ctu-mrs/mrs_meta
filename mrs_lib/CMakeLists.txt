@@ -47,14 +47,15 @@ set(DEPENDENCIES
   visualization_msgs
   Eigen3
   yaml-cpp
-  Boost
 )
 
 foreach(DEP IN LISTS DEPENDENCIES)
   find_package(${DEP} REQUIRED)
 endforeach()
 
-find_package(OpenCV REQUIRED HINTS /usr/local/lib)
+find_package(Boost CONFIG REQUIRED)
+
+# find_package(OpenCV REQUIRED HINTS /usr/local/lib)
 
 ## --------------------------------------------------------------
 ## |                       compile                              |
@@ -75,6 +76,9 @@ target_sources(mrs_lib_mrs_lib
     # src/batch_visualizer
     "src/batch_visualizer/batch_visualizer.cpp"
     "src/batch_visualizer/visual_object.cpp"
+    # src/coro
+    "src/coro/cancellation.cpp"
+    "src/coro/event.cpp"
     # src/coro/internal
     "src/coro/internal/thread_local_continuation_scheduler.cpp"
     # src/dynparam_mgr
@@ -113,6 +117,9 @@ target_sources(mrs_lib_mrs_lib
     "src/scope_timer/scope_timer.cpp"
     # src/timeout_manager
     "src/timeout_manager/timeout_manager.cpp"
+    "src/timeout_manager/timeout_manager2.cpp"
+    # src/timer
+    "src/timer/timer.cpp"
     # src/timer_handler
     "src/timer_handler/timer_handler.cpp"
     # src/transform_broadcaster
@@ -134,6 +141,7 @@ target_sources(mrs_lib_mrs_lib
     "include/mrs_lib/kalman_filter.h"
     "include/mrs_lib/lkf.h"
     "include/mrs_lib/lockable.h"
+    "include/mrs_lib/logger.hpp"
     "include/mrs_lib/math.h"
     "include/mrs_lib/median_filter.h"
     "include/mrs_lib/mrs_lib.h"
@@ -146,6 +154,8 @@ target_sources(mrs_lib_mrs_lib
     "include/mrs_lib/param_provider.h"
     "include/mrs_lib/profiler.h"
     "include/mrs_lib/publisher_handler.h"
+    "include/mrs_lib/publisher.hpp"
+    "include/mrs_lib/publisher.impl.hpp"
     "include/mrs_lib/quadratic_throttle_model.h"
     "include/mrs_lib/repredictor.h"
     "include/mrs_lib/safety_zone.h"
@@ -153,19 +163,28 @@ target_sources(mrs_lib_mrs_lib
     "include/mrs_lib/service_client_handler.h"
     "include/mrs_lib/service_server_handler.h"
     "include/mrs_lib/subscriber_handler.h"
+    "include/mrs_lib/subscriber.hpp"
+    "include/mrs_lib/subscriber.impl.hpp"
     "include/mrs_lib/timeout_manager.h"
+    "include/mrs_lib/timeout_manager.hpp"
     "include/mrs_lib/timer_handler.h"
+    "include/mrs_lib/timer.hpp"
     "include/mrs_lib/transform_broadcaster.h"
     "include/mrs_lib/transformer.h"
     "include/mrs_lib/ukf.h"
     "include/mrs_lib/utils.h"
     "include/mrs_lib/visual_object.h"
     # include/mrs_lib/coro
+    "include/mrs_lib/coro/cancellation.hpp"
+    "include/mrs_lib/coro/event.hpp"
     "include/mrs_lib/coro/runners.hpp"
     "include/mrs_lib/coro/task.hpp"
     "include/mrs_lib/coro/task.impl.hpp"
     # include/mrs_lib/coro/internal
     "include/mrs_lib/coro/internal/attributes.hpp"
+    "include/mrs_lib/coro/internal/continuation.hpp"
+    "include/mrs_lib/coro/internal/immediate_awaitable.hpp"
+    "include/mrs_lib/coro/internal/result_storage.hpp"
     "include/mrs_lib/coro/internal/thread_local_continuation_scheduler.hpp"
     # include/mrs_lib/errorgraph
     "include/mrs_lib/errorgraph/node_id.h"
@@ -195,6 +214,12 @@ target_sources(mrs_lib_mrs_lib
     "include/mrs_lib/safety_zone/polygon.h"
     "include/mrs_lib/safety_zone/prism.h"
     "include/mrs_lib/safety_zone/static_edges_visualization.h"
+    # include/mrs_lib/utility
+    "include/mrs_lib/utility/callback.hpp"
+    "include/mrs_lib/utility/meta.hpp"
+    "include/mrs_lib/utility/owning_mutex.hpp"
+    "include/mrs_lib/utility/pimpl.hpp"
+    "include/mrs_lib/utility/scope_cleanup.hpp"
 )
 
 target_link_libraries(mrs_lib_mrs_lib
@@ -204,7 +229,7 @@ target_link_libraries(mrs_lib_mrs_lib
     yaml-cpp::yaml-cpp
     tf2_eigen::tf2_eigen
     Boost::headers
-    ${OpenCV_LIBRARIES}
+    # ${OpenCV_LIBRARIES}
     # msgs
     ${geometry_msgs_TARGETS}
     ${tf2_ros_TARGETS}
@@ -250,11 +275,15 @@ target_link_libraries(subscribe_handler_example
 if(ENABLE_TESTS)
 
   add_subdirectory(test)
+  add_subdirectory(examples)
 
-  find_package(ament_cmake_clang_format REQUIRED)
-  ament_clang_format(CONFIG_FILE "${PROJECT_SOURCE_DIR}/.clang-format")
-  find_package(ament_cmake_xmllint REQUIRED)
-  ament_xmllint()
+  if(NOT DEFINED ENV{IN_NIX_SHELL})
+    message(WARNING "Compiling lint tests")
+    find_package(ament_cmake_clang_format REQUIRED)
+    ament_clang_format(CONFIG_FILE "${PROJECT_SOURCE_DIR}/.clang-format")
+    find_package(ament_cmake_xmllint REQUIRED)
+    ament_xmllint()
+  endif()
 
   mrs_verify_interface_header_sets(mrs_lib_mrs_lib)
 
@@ -290,6 +319,7 @@ ament_export_include_directories(
 
 ament_export_dependencies(
   ${DEPENDENCIES}
+  Boost # exported separately, since it is found separately
 )
 
 ament_python_install_package(${PROJECT_NAME})

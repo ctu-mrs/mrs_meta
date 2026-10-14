@@ -236,6 +236,11 @@ def generate_launch_description():
             ("~/set_odometry_callbacks_out", "estimation_manager/toggle_service_callbacks"),
             ("~/ungrip_out", "gripper/ungrip"),
             ("~/offboard_out", "hw_api/offboard"),
+            ("~/is_world_origin_ready_out", "transform_manager/is_world_origin_ready"),
+        ],
+
+        extra_arguments=[
+            {'use_intra_process_comms': True}
         ],
     )
 
@@ -255,13 +260,12 @@ def generate_launch_description():
         namespace=uav_name,
         name=namespace+'_container',
         package='rclcpp_components',
-        executable='component_container_mt',
+        executable='component_container_events_cbg',
         output="screen",
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
         # prefix=['debug_roslaunch ' + os.ttyname(sys.stdout.fileno())],
         composable_node_descriptions=[uav_manager_node],
         parameters=[
-            {'use_intra_process_comms': True},
             {'thread_num': os.cpu_count()},
             {'use_sim_time': use_sim_time},
         ],
