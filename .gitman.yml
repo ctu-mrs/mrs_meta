@@ -75,13 +75,13 @@ sources:
     repo: https://github.com/ctu-mrs/mrs_uav_system.git
     rev: ros2
     params: -b ros2 --depth=1
-    scripts: [rm -rf .git]
+    scripts: [rm -rf .git .fig]
 
   - name: ctu-mrs.github.io
     repo: https://github.com/ctu-mrs/ctu-mrs.github.io.git
     rev: master
     params: -b master --depth=1
-    scripts: [rm -rf .git versioned_docs docs/130-unrelated]
+    scripts: [rm -rf .git versioned_docs docs/130-unrelated yarn.lock docs/60-simulations/01-gazebo/fig docs/10-prerequisites/30-docker/fig docs/50-features/30-trajectory_generation/fig docs/100-hardware/px4/fig docs/100-hardware/radios/fig docs/100-hardware/fig docs/50-features/80-rviz_plugins/fig docs/40-api/fig docs/120-miscellaneous/3d_model_processing/fig]
 
   - name: mrs_octomap_server
     repo: https://github.com/ctu-mrs/mrs_octomap_server.git
@@ -123,7 +123,7 @@ sources:
     repo: https://github.com/ctu-mrs/open_vins.git
     rev: ros2
     params: -b ros2 --depth=1
-    scripts: [rm -rf .git ov_data ov_eval]
+    scripts: [rm -rf .git ov_data ov_eval docs/img config/*/*.xcf]
 
   - name: mrs_open_vins_estimator_plugin
     repo: https://github.com/ctu-mrs/mrs_open_vins_estimator_plugin.git
@@ -165,7 +165,7 @@ sources:
     repo: https://github.com/ctu-mrs/mrs_uav_flightforge_simulator.git
     rev: ros2
     params: -b ros2 --depth=1
-    scripts: [rm -rf .git]
+    scripts: [rm -rf .git .fig]
 
   - name: flight_forge
     repo: https://github.com/ctu-mrs/flight_forge.git
@@ -211,6 +211,36 @@ sources:
 
   - name: mrs_computer_vision_examples
     repo: https://github.com/ctu-mrs/mrs_computer_vision_examples.git
+    rev: ros2
+    params: -b ros2 --depth=1
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_deployment
+    repo: https://github.com/ctu-mrs/mrs_uav_deployment.git
+    rev: ros2
+    params: -b ros2 --depth=1
+    scripts: [rm -rf .git config/uvdar_calibrations config/camera_calibrations shh]
+
+  - name: mrs_uav_development
+    repo: https://github.com/ctu-mrs/mrs_uav_development.git
+    rev: ros2
+    params: -b ros2 --depth=1
+    scripts: [rm -rf .git]
+
+  - name: mrs_uav_testing
+    repo: https://github.com/ctu-mrs/mrs_uav_testing.git
+    rev: ros2
+    params: -b ros2 --depth=1
+    scripts: [rm -rf .git]
+
+  - name: mrs_utils
+    repo: https://github.com/ctu-mrs/mrs_utils.git
+    rev: ros2
+    params: -b ros2 --depth=1
+    scripts: [rm -rf .git .fig]
+
+  - name: mrs_uav_trajectory_loader
+    repo: https://github.com/ctu-mrs/mrs_uav_trajectory_loader.git
     rev: ros2
     params: -b ros2 --depth=1
     scripts: [rm -rf .git]

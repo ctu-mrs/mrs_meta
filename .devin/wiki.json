@@ -1,16 +1,13 @@
 {
   "repo_notes": [
     {
-      "content": "Primary source rule: Prefer documentation and content coming from the repository sources (code, README, docs/, package manifests, launch/URDF/ROS msg/srv files, CI or build scripts, examples, and tests) of the component repositories included in this mono-repo. Avoid creating a wiki page based solely on the ctu-mrs.github.io folder or .gitman.yml when the same information can be corroborated by at least one other repository source (file path or commit). If other sources are unavailable, the information may still be used but clearly labelled as uncorroborated."
+      "content": "Primary source rule: Base pages on the component packages in this mono-repo (code, launch/ and config/ files, package.xml, msg/srv definitions, READMEs, examples and tests) and use ctu-mrs.github.io/docs to explain them. .gitman.yml and .devin/wiki.json only configure this mono-repo and are not sources about the MRS UAV System, so do not cite them."
     },
     {
-      "content": "Do not prune: Avoid automatically dropping folders from the plan unless they are empty. If storage/size limits force omissions, prioritize launch/, msg/, or docs/. If certain folders remain undocumented after one generation run, DeepWiki should surface a short follow-up report including but not limited to a 'skipped or low-coverage folders' section with reasons (e.g., 'no README, many binary files, or exceeded token limit')"
+      "content": "UAV system focus: This mono-repo aggregates the packages of the ROS2 MRS UAV System. Describe the MRS UAV System: its architecture, runtime components, and robotics functionality. Do not describe mrs_meta itself or its mechanisms (gitman sources, the refresh workflow, the .devin wiki configuration). Pages about general tools (Bash, SSH, C++/Python, ROS2, Docker) should focus on how they are used with the MRS UAV System rather than being generic tutorials."
     },
     {
-      "content": "UAV system focus: Focus documentation on the UAV system architecture, runtime components, and robotics functionality. Avoid pages that primarily document the mrs_meta repository itself, its documentation system, or generic developer tooling unless they are specific to the ROS2 MRS UAV System"
-    },
-    {
-      "content": "Output expectations: Generate pages with clear titles. Each page should include (a) a one-sentence summary, (b) source file links, (c) architecture or dependency diagrams where applicable, and (d) a 'Where to look next' section linking to the repository files and relevant pages in other repositories. When describing system architecture, components, or runtime behavior, prefer inferring structure from source code rather than relying solely on prose documentation, and include a short 'Confidence' note (low|medium|high)"
+      "content": "Output expectations: Generate pages with clear titles. Each page should include (a) a one-sentence summary, (b) source file links, (c) architecture or dependency diagrams where applicable, and (d) a 'Where to look next' section linking to the repository files and relevant pages in other repositories. When describing system architecture, components, or runtime behavior, prefer inferring structure from source code rather than relying solely on prose documentation, and include a short 'Confidence' note (low|medium|high). Cite only files and paths that exist in this repository and that were actually read for the page; never construct plausible-looking paths. When a statement cannot be backed by a file, mark it as uncorroborated instead of citing a guess."
     }
   ],
   "pages": [
@@ -19,7 +16,7 @@
       "purpose": "Introduce the mrs_uav_system (not mrs_meta) repository, summarizing at a high level what it contains and its purpose as a UAV control, estimation, and simulation platform",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: mrs_uav_system/README.md, mrs_uav_system/ros_packages/mrs_uav_system/package.xml and mrs_uav_system/ros_packages/mrs_uav_system_full/package.xml (the authoritative lists of packages that make up the system), and ctu-mrs.github.io/docs/01-introduction/index.md. Describe the MRS UAV System itself; .devin/wiki.json and .gitman.yml are configuration of this mono-repo and are not sources about the system."
         }
       ]
     },
@@ -28,7 +25,7 @@
       "purpose": "Guide users through initial setup, from understanding repository structures to running their first simulation",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/20-installation (native, Docker and Apptainer installation), ctu-mrs.github.io/docs/60-simulations/10-mrs/20-with_mrs_system.md and the tmux/ session folders of mrs_multirotor_simulator/ and mrs_uav_gazebo_simulator/ (start.sh, session.yml) for running the first simulation."
         }
       ]
     },
@@ -38,7 +35,7 @@
       "parent": "Getting Started",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/50-features (one folder per feature: managers, controllers, trackers, estimators, localization, trajectory generation, autostart, status TUI, octomap, failsafe, bumper, collision avoidance, precise landing, libraries, rviz plugins, utilities) and ctu-mrs.github.io/docs/40-api/20-frames_of_reference.md for frame terminology."
         }
       ]
     },
@@ -48,7 +45,7 @@
       "parent": "Getting Started",
       "page_notes": [
         {
-          "content": "Sources: ctu-mrs.github.io/docs/40-api (UAV-ROS API, ROS messages, custom configs, frames of reference, transformations, custom real world file, trajectory input), corroborated by mrs_msgs/ (msg/, srv/), mrs_uav_managers/ (control_manager, uav_manager, transform_manager, safety_area_manager, config/ defaults) and the custom_config.yaml / world_config.yaml files in the tmux/ sessions of mrs_core_examples/ and the simulator packages."
+          "content": "Sources: ctu-mrs.github.io/docs/40-api (UAV-ROS API, ROS messages, custom configs, frames of reference, transformations, custom real world file, trajectory input), corroborated by mrs_msgs/ (msg/, srv/), mrs_uav_managers/ (control_manager, uav_manager, transform_manager, safety_area_manager, config/ defaults) and the custom_config.yaml / world_config.yaml files in the tmux/ sessions of mrs_core_examples/ and the simulator packages. For loading trajectories from files, see mrs_uav_trajectory_loader/."
         }
       ]
     },
@@ -68,7 +65,7 @@
       "parent": "Getting Started",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/index.md and its pages (01-linux.md, 03-git.md, 40-tmux.md, 60-vim.md, 70-ansible.md, 100-cheatsheet.md); Bash, SSH, C++/Python, ROS2 and Docker have their own pages, so only summarize them here."
         }
       ]
     },
@@ -78,7 +75,7 @@
       "parent": "Prerequisites",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/02-bash.md and 01-linux.md, with MRS-specific shell setup from mrs_uav_development/shell_additions/shell_additions.sh and ctu-mrs.github.io/docs/70-deployment/30-native/bashrc_configuration.md."
         }
       ]
     },
@@ -88,7 +85,7 @@
       "parent": "Prerequisites",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/04-ssh.md, plus the ssh config generator mrs_uav_deployment/ssh/generate_ssh_config.sh if present."
         }
       ]
     },
@@ -98,7 +95,7 @@
       "parent": "Prerequisites",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/50-cpp.md and 51-python.md, with real examples from mrs_core_examples/cpp and mrs_core_examples/python and the .clang-format files of the mrs_* packages."
         }
       ]
     },
@@ -107,7 +104,7 @@
       "purpose": "Comprehensive guide to setting up and working with ROS2 Jazzy, including installation, workspace management, and migration patterns from ROS1",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/25-ros2/index.md; the subpages cover installation, migration patterns, colcon and launch/parameters, so keep this page an overview of the MRS ROS2 workflow (Jazzy, colcon workspaces, tmux sessions)."
         }
       ]
     },
@@ -117,7 +114,7 @@
       "parent": "ROS2 Development Environment",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/25-ros2/10-installation.md and 20-workspace-build.md, ctu-mrs.github.io/docs/20-installation/10-native-installation.md, and mrs_uav_development/ for the shell additions sourced during workspace setup."
         }
       ]
     },
@@ -137,7 +134,7 @@
       "parent": "ROS2 Development Environment",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/25-ros2/50-ros1-ros2-patterns/10-colcon.md and 70-workspace_profiles.md, corroborated by mrs_uav_development/ (mixin/build_types.mixin, mixin/index.yaml, and the colcon/cb wrappers in shell_additions/shell_additions.sh)."
         }
       ]
     },
@@ -156,17 +153,17 @@
       "purpose": "Present the high-level architecture of the MRS UAV System, showing how core libraries, UAV management, control, estimation, mapping, simulation and hardware packages interact, and list every package with its role and relationships",
       "page_notes": [
         {
-          "content": ""
+          "content": "Build the package catalog from the package.xml files of the component folders and from mrs_uav_system/ros_packages/*/package.xml, and infer interactions from the plugin interfaces in mrs_uav_managers/include/mrs_uav_managers (controller.h, tracker.h, state_estimator.h) and mrs_uav_hw_api/include/mrs_uav_hw_api/api.h. ctu-mrs.github.io/docs/50-features and ctu-mrs.github.io/docs/45-plugin-interface describe the same components in prose."
         }
       ]
     },
     {
       "title": "Core Foundation Packages",
-      "purpose": "Document mrs_lib, mrs_msgs, mrs_modules_msgs, and mrs_serial as the foundational libraries providing common utilities and message definitions",
+      "purpose": "Document mrs_lib, mrs_msgs, mrs_modules_msgs, mrs_serial and mrs_utils as the foundational libraries providing common utilities, message definitions and TF/odometry helper nodes",
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "Also cover mrs_utils/ (part of the mrs_uav_modules metapackage: mrs_odometry_republisher, mrs_sensor_info, mrs_tf_connector, mrs_tf_mirror, mrs_tf_reconfigure)."
         }
       ]
     },
@@ -176,7 +173,7 @@
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: mrs_uav_managers/src (control_manager/, estimation_manager/, transform_manager/, uav_manager.cpp, constraint_manager.cpp, gain_manager.cpp, safety_area_manager.cpp, null_tracker.cpp), mrs_uav_managers/launch and mrs_uav_managers/config, mrs_uav_autostart/src/automatic_start.cpp, mrs_uav_status/src, and ctu-mrs.github.io/docs/50-features/01-managers, 40-autostart and 50-status_tui."
         }
       ]
     },
@@ -186,7 +183,7 @@
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: mrs_uav_controllers/src (se3_controller.cpp, mpc_controller.cpp, failsafe_controller.cpp, midair_activation_controller.cpp), mrs_uav_trackers/src (mpc_tracker.cpp, line_tracker.cpp, landoff_tracker.cpp, flip_tracker.cpp, midair_activation_tracker.cpp), mrs_uav_trajectory_generation/src, their config/ folders, and ctu-mrs.github.io/docs/50-features/10-controllers, 20-trackers and 30-trajectory_generation."
         }
       ]
     },
@@ -206,7 +203,7 @@
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: mrs_octomap_server/src/octomap_server.cpp, mrs_octomap_planner/src (octomap_planner.cpp, astar_planner.cpp), mrs_octomap_tools/src (octomap_editor.cpp, octomap_saver.cpp, octomap_rviz_visualizer.cpp, octomap_ceiling_remover.cpp), and ctu-mrs.github.io/docs/50-features/55-octomap."
         }
       ]
     },
@@ -216,7 +213,7 @@
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: mrs_uav_hw_api/include/mrs_uav_hw_api/api.h and mrs_uav_hw_api/src/hw_api_manager.cpp (the abstraction), mrs_uav_px4_api/src/api.cpp and mrs_uav_dji_tello_api/src/api.cpp (implementations), mrs_serial/src (serial and baca protocol), ctu-mrs.github.io/docs/45-plugin-interface/01-hardware-api and ctu-mrs.github.io/docs/100-hardware (px4/, ardupilot/, radios/)."
         }
       ]
     },
@@ -256,7 +253,7 @@
       "parent": "System Architecture and Package Overview",
       "page_notes": [
         {
-          "content": ""
+          "content": "Also cover mrs_uav_testing/ (the test framework used by the tests of the mrs_uav_* packages) and mrs_uav_development/shell_additions/shell_additions.sh (workspace shell functions sourced from .bashrc)."
         }
       ]
     },
@@ -285,7 +282,7 @@
       "purpose": "Explain how to deploy the MRS UAV System on a real UAV or workstation: native installation, Docker (and why it is used for reproducible development and deployment), Apptainer, Podman, Kubernetes and Portainer, plus preparing for a real-world experiment",
       "page_notes": [
         {
-          "content": "Sources: ctu-mrs.github.io/docs/70-deployment, ctu-mrs.github.io/docs/20-installation, ctu-mrs.github.io/docs/10-prerequisites/30-docker, mrs_docker/ (deployment/ros2, recipes/) and mrs_apptainer/."
+          "content": "Sources: ctu-mrs.github.io/docs/70-deployment, ctu-mrs.github.io/docs/20-installation, ctu-mrs.github.io/docs/10-prerequisites/30-docker, mrs_docker/ (deployment/ros2, recipes/) and mrs_apptainer/. Also use mrs_uav_deployment/ (config/ for real-world worlds, zenoh and cyclonedds, scripts/ such as uav_check and the trajectory checker, tmux/just_flying, miscellaneous/ chrony, netplan, udev rules and pixhawk SD card config); its ssh and calibration folders were removed from this mono-repo."
         }
       ]
     },
@@ -295,7 +292,7 @@
       "parent": "Deployment",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/30-docker (10-building-images.md, 20-crossplatform-build.md, 30-registries.md, 60-custom-configs.md, 70-workspace-build.md), mrs_docker/recipes/ (Dockerfiles), mrs_uav_system/docker/docker-bake.hcl, and the CI workflows under mrs_uav_system/.github."
         }
       ]
     },
@@ -305,7 +302,7 @@
       "parent": "Deployment",
       "page_notes": [
         {
-          "content": ""
+          "content": "Sources: ctu-mrs.github.io/docs/10-prerequisites/30-docker/100-FAQ.md and the rest of ctu-mrs.github.io/docs/10-prerequisites/30-docker, plus the compose files in mrs_docker/simulation and mrs_docker/deployment for concrete examples."
         }
       ]
     }
