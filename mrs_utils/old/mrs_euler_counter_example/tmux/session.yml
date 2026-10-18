@@ -1,0 +1,27 @@
+root: ./
+name: simulation
+startup_window: node
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+windows:
+  - roscore:
+      layout: tiled
+      panes:
+        - roscore
+  - node:
+      layout: tiled
+      panes:
+        - waitForRos; roslaunch mrs_euler_counter_example euler_counter_example.launch
+  - rviz:
+      layout: tiled
+      panes:
+        - waitForRos; rosrun rviz rviz -d ./rviz.rviz
+  - rqt:
+      layout: tiled
+      panes:
+        - waitForRos; rosrun rqt_reconfigure rqt_reconfigure
+  - layout:
+      layout: tiled
+      panes:
+        - waitForRos; sleep 3; ~/.i3/layout_manager.sh ./layout.json

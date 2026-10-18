@@ -1,0 +1,13 @@
+# yaml tf outputs
+*.yaml
+
+# env file theat contains private keys
+*.env
+.env
+
+# generated pyton virtual environment
+
+/.venv
+
+# log files
+*.log

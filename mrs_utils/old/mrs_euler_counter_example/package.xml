@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="2">
+
+  <name>mrs_euler_counter_example</name>
+  <version>1.0.0</version>
+  <description>The Euler Counter-Example package</description>
+
+  <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>cmake_modules</depend>
+  <depend>dynamic_reconfigure</depend>
+  <depend>message_generation</depend>
+  <depend>message_runtime</depend>
+  <depend>mrs_lib</depend>
+  <depend>mrs_msgs</depend>
+  <depend>mrs_modules_msgs</depend>
+  <depend>nodelet</depend>
+  <depend>roscpp</depend>
+  <depend>tf2</depend>
+
+  <export>
+    <nodelet plugin="${prefix}/nodelets.xml" />
+  </export>
+
+</package>

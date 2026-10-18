@@ -1,0 +1,93 @@
+cmake_minimum_required(VERSION 3.20)
+project(mrs_tf_reconfigure)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# 1 == use rclcpp::Timer implementation
+# 0 == use MRS's thread timer implementation
+set(USE_ROS_TIMER 0)
+
+if(${USE_ROS_TIMER})
+  MESSAGE(WARNING "[mrs_tf_reconfigure]: Compiling with ROS Timers. This can cause high CPU load in runtime.")
+endif()
+
+set(DEPENDENCIES
+  mrs_lib
+  mrs_msgs
+  mrs_modules_msgs
+  nav_msgs
+  rclcpp
+  rclcpp_components
+  sensor_msgs
+  tf2
+  tf2_ros
+  tf2_sensor_msgs
+)
+
+foreach(DEP IN LISTS DEPENDENCIES)
+  find_package(${DEP} REQUIRED)
+endforeach()
+
+# set the compile options to show code warnings
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra)
+endif()
+
+set(LIBRARIES
+  MrsUtils_MRSTFReconfigure
+)
+
+add_library(MrsUtils_MRSTFReconfigure SHARED
+  src/TfReconfigure.cpp
+)
+
+target_link_libraries(MrsUtils_MRSTFReconfigure
+  mrs_lib::mrs_lib
+  ${mrs_msgs_TARGETS}
+  ${mrs_modules_msgs_TARGETS}
+  ${nav_msgs_TARGETS}
+  rclcpp::rclcpp
+  rclcpp_components::component
+  ${sensor_msgs_TARGETS}
+  tf2::tf2
+  tf2_ros::tf2_ros
+  tf2_sensor_msgs::tf2_sensor_msgs
+)
+
+target_include_directories(MrsUtils_MRSTFReconfigure
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+rclcpp_components_register_node(MrsUtils_MRSTFReconfigure
+  PLUGIN "mrs_tf_reconfigure::TfReconfigure"
+  EXECUTABLE tf_reconfigure_node
+)
+
+## --------------------------------------------------------------
+## |                           Install                          |
+## --------------------------------------------------------------
+
+install(TARGETS ${LIBRARIES} EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(DIRECTORY launch rviz start
+  USE_SOURCE_PERMISSIONS
+  DESTINATION share/${PROJECT_NAME}
+)
+
+ament_export_targets(
+  export_${PROJECT_NAME} HAS_LIBRARY_TARGET
+)
+
+ament_export_dependencies(
+  ${DEPENDENCIES}
+)
+
+ament_package()

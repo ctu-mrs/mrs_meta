@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="2">
+
+  <name>mrs_tf_estimator</name>
+  <version>1.0.0</version>
+  <description>The mrs_tf_estimator package</description>
+
+  <maintainer email="vrbamato@fel.cvut.cz">Matouš Vrba</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>cmake_modules</depend>
+  <depend>rospy</depend>
+  <depend>mrs_lib</depend>
+  <depend>mrs_msgs</depend>
+  <depend>mrs_modules_msgs</depend>
+
+</package>

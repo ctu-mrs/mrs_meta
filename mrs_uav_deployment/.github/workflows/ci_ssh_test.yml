@@ -1,0 +1,32 @@
+name: ci_ssh_test
+
+on:
+  push:
+    branches: [ ros2 ]
+    paths: [ 'ssh/**' ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # fetch full history so HEAD~1 exists
+          token: ${{ secrets.PUSH_TOKEN }}
+
+      - name: Check for unencrypted ssh keys
+        id: ssh
+        run: |
+          set +e
+          sh .ci/pre-commit
+          echo "rc=$?" >> $GITHUB_OUTPUT
+
+      - name: Delete commit if unencrypted ssh keys were found
+        if: steps.ssh.outputs.rc != '0'
+        run: |
+          git reset --hard HEAD~1
+          git push --force-with-lease

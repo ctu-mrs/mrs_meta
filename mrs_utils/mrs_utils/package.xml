@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+
+  <name>mrs_utils</name>
+
+  <version>2.0.0</version>
+  <description>MRS Utils</description>
+
+  <author email="tomas.baca@fel.cvut.cz">Tomas Baca</author>
+  <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
+
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>builtin_interfaces</depend>
+  <depend>mrs_odometry_republisher</depend>
+  <depend>mrs_tf_connector</depend>
+  <depend>mrs_tf_mirror</depend>
+  <depend>mrs_tf_reconfigure</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>

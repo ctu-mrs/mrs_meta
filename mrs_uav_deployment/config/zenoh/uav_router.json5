@@ -1,0 +1,128 @@
+/// Based on /opt/ros/jazzy/share/rmw_zenoh_cpp/config/DEFAULT_RMW_ZENOH_ROUTER_CONFIG.json5
+{
+  /// WARNING: this id must be unique in your zenoh network. By default, a random unsigned 128bit integer will be used.
+  // id: "1234567890abcdef",
+
+  /// The node's mode (router, peer or client)
+  mode: "router",
+
+  /// Which endpoints to connect to. E.g. tcp/localhost:7447. See https://docs.rs/zenoh/latest/zenoh/config/struct.EndPoint.html
+  connect: {
+    endpoints: [
+      //"tcp/192.168.69.1:7447"
+    ],
+  },
+
+  /// Which endpoints to listen on. E.g. tcp/0.0.0.0:7447. See https://docs.rs/zenoh/latest/zenoh/config/struct.EndPoint.html
+  listen: {
+    endpoints: [
+      "tcp/[::]:7447"
+    ],
+  },
+
+  /// Configure access control (ACL) rules
+  access_control: {
+    "enabled": true,
+    "default_permission": "deny",
+
+    /// Here we specify the ROS2 message types, flows, and multiple possible key expressions which the rule will apply to.
+    "rules": [
+      {
+        "id": "allow_list",
+        "messages": ["put", "declare_subscriber", "declare_queryable", "delete", "query", "reply", "liveliness_token", "declare_liveliness_subscriber", "liveliness_query"],
+        "flows": ["ingress", "egress"],
+        "permission": "allow",
+        "key_exprs": [
+        "**/diagnostics/**", 
+        "@ros2_lv/**"
+        ]
+      },
+      {
+        "id": "allow_tf_ingress",
+        "messages": ["declare_subscriber", "declare_queryable", "delete", "query", "reply", "declare_liveliness_subscriber", "liveliness_query"],
+        "flows": ["ingress"],
+        "permission": "allow",
+        "key_exprs": [
+        "**/tf/**", 
+        "**/tf_static/**"
+        ]
+      },
+      {
+        "id": "allow_tf_egress",
+        "messages": ["put"],
+        "flows": ["egress"],
+        "permission": "allow",
+        "key_exprs": [
+        "**/tf/**", 
+        "**/tf_static/**"
+        ]
+      },
+      {
+        "id": "allow_all",      
+        "messages": ["put", "declare_subscriber", "declare_queryable", "delete", "query", "reply", "liveliness_token", "declare_liveliness_subscriber", "liveliness_query"],
+        "flows": ["egress", "ingress"],
+        "permission": "allow",
+        "key_exprs": [
+        "**",
+        "@ros2_lv/**"]      
+        }    
+    ],
+
+    "subjects": [
+      {
+        "id": "local_loopback",
+        "interfaces": ["lo", "lo0"]
+      },
+      {
+        "id": "wifi_interfaces",
+        "interfaces": ["wlan0", "wlp1s0"]
+      }
+    ],
+
+    /// Policies assign rules to the subjects.
+    "policies": [
+      {
+        "id": "allow_list_wifi",
+        "rules": ["allow_list", "allow_tf_ingress", "allow_tf_egress"],
+        "subjects": ["wifi_interfaces"]
+      },
+      {
+        "id": "allow_all_local",
+        "rules": ["allow_all"],
+        "subjects" : ["local_loopback"]
+      }
+    ]
+  },
+
+  /// Configure internal transport parameters
+  transport: {
+    link: {
+      /// Configure the zenoh TX parameters of a link
+      tx: {
+        /// Link lease duration in milliseconds to announce to other zenoh nodes
+        lease: 10000,
+        /// Number of keep-alive messages in a link lease duration. If no data is sent, keep alive
+        keep_alive: 4,
+        /// Each zenoh link has a transmission queue that can be configured
+        queue: {
+          /// Congestion occurs when the queue is empty (no available batch).
+          congestion_control: {
+            /// Behavior pushing CongestionControl::Drop messages to the queue.
+            drop: {
+              /// The maximum time in microseconds to wait for an available batch before dropping a droppable message if still no batch is available.
+              wait_before_drop: 1000000,
+              /// The maximum deadline limit for multi-fragment messages.
+              max_wait_before_drop_fragments: 50000,
+            },
+          },
+        },
+      },
+    },
+  },
+
+  /// Configure the Admin Space
+  adminspace: {
+    enabled: false,
+  },
+
+}
