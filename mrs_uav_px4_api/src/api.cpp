@@ -205,6 +205,8 @@ private:
 
   double RCChannelToRange(const double &rc_value);
 
+  geometry_msgs::msg::Point px4LocalToUtm(const geometry_msgs::msg::Point &px4_position);
+
   // | ----------------------- publishers ----------------------- |
 
   mrs_lib::PublisherHandler<mavros_msgs::msg::AttitudeTarget>  ph_mavros_attitude_target_;
@@ -884,6 +886,51 @@ double MrsUavPx4Api::RCChannelToRange(const double &rc_value) {
 
 //}
 
+/* px4LocalToUtm() //{ */
+
+geometry_msgs::msg::Point MrsUavPx4Api::px4LocalToUtm(const geometry_msgs::msg::Point &px4_position) {
+
+  // The px4 Azimuthal Equidistant Projection of WGS84 is inconsistent with the UTM conversion is MRS system,
+  // therefore, we convert it back to WGS84 frame and then convert correctly using mrs_lib.
+
+  double lat, lon;
+
+  // BEGIN PX4 CODE
+  const double x_rad = (double)px4_position.y / 6371000.0;
+  const double y_rad = (double)px4_position.x / 6371000.0;
+  const double c     = sqrt(x_rad * x_rad + y_rad * y_rad);
+
+  if (fabs(c) > 0) {
+    const double sin_c = sin(c);
+    const double cos_c = cos(c);
+
+    const double lat_rad = asin(cos_c * _ref_sin_lat + (x_rad * sin_c * _ref_cos_lat) / c);
+    const double lon_rad = (_ref_lon + atan2(y_rad * sin_c, c * _ref_cos_lat * cos_c - x_rad * _ref_sin_lat * sin_c));
+
+    lat = RAD2DEG(lat_rad);
+    lon = RAD2DEG(lon_rad);
+
+  } else {
+    lat = RAD2DEG(_ref_lat);
+    lon = RAD2DEG(_ref_lon);
+  }
+  // END PX4 CODE
+
+  geometry_msgs::msg::Point position = px4_position;
+
+  mrs_lib::UTM(lat, lon, &position.x, &position.y);
+
+  position.x -= _ref_utm_x;
+  position.y -= _ref_utm_y;
+
+  RCLCPP_DEBUG(node_->get_logger(), "position_px4_x: %f, position_px4_y: %f", px4_position.x, px4_position.y);
+  RCLCPP_DEBUG(node_->get_logger(), "correct_mrs_x: %f, correct_mrs_y: %f", position.x, position.y);
+
+  return position;
+}
+
+//}
+
 // | ------------------------ callbacks ----------------------- |
 
 /* //{ callbackMavrosState() */
@@ -972,55 +1019,20 @@ void MrsUavPx4Api::callbackOdometryLocal(const nav_msgs::msg::Odometry::ConstSha
     odom.twist.twist.angular = angular_velocity_;
   }
 
+  // PX4's local x/y re-projected to UTM, used by both the position and the odometry
+  if (_capabilities_.produces_gnss && _ref_latlon_init) {
+    odom.pose.pose.position = px4LocalToUtm(msg->pose.pose.position);
+  }
+
   // | -------------------- publish position -------------------- |
-
-  geometry_msgs::msg::PointStamped position;
-
-  position.header.stamp    = msg->header.stamp;
-  position.header.frame_id = _uav_name_ + "/" + _world_frame_name_;
-  position.point           = msg->pose.pose.position;
-
-  double lat, lon, correct_x, correct_y;
 
   if (_capabilities_.produces_position) {
 
-    if (_capabilities_.produces_gnss and _ref_latlon_init) {
+    geometry_msgs::msg::PointStamped position;
 
-      // The px4 Azimuthal Equidistant Projection of WGS84 is inconsistent with the UTM conversion is MRS system,
-      // therefore, we convert it back to WGS84 frame and then convert correctly using mrs_lib.
-
-      // BEGIN PX4 CODE
-      const double x_rad = (double)msg->pose.pose.position.y / 6371000.0;
-      const double y_rad = (double)msg->pose.pose.position.x / 6371000.0;
-      const double c     = sqrt(x_rad * x_rad + y_rad * y_rad);
-
-      if (fabs(c) > 0) {
-        const double sin_c = sin(c);
-        const double cos_c = cos(c);
-
-        const double lat_rad = asin(cos_c * _ref_sin_lat + (x_rad * sin_c * _ref_cos_lat) / c);
-        const double lon_rad = (_ref_lon + atan2(y_rad * sin_c, c * _ref_cos_lat * cos_c - x_rad * _ref_sin_lat * sin_c));
-
-        lat = RAD2DEG(lat_rad);
-        lon = RAD2DEG(lon_rad);
-
-      } else {
-        lat = RAD2DEG(_ref_lat);
-        lon = RAD2DEG(_ref_lon);
-      }
-      // END PX4 CODE
-
-      mrs_lib::UTM(lat, lon, &correct_x, &correct_y);
-
-      correct_x = correct_x - _ref_utm_x;
-      correct_y = correct_y - _ref_utm_y;
-
-      position.point.x = correct_x;
-      position.point.y = correct_y;
-
-      RCLCPP_DEBUG(node_->get_logger(), "position_px4_x: %f, position_px4_y: %f", position.point.x, position.point.y);
-      RCLCPP_DEBUG(node_->get_logger(), "correct_mrs_x: %f, correct_mrs_y: %f", correct_x, correct_y);
-    }
+    position.header.stamp    = msg->header.stamp;
+    position.header.frame_id = _uav_name_ + "/" + _world_frame_name_;
+    position.point           = odom.pose.pose.position;
 
     common_handlers_->publishers.publishPosition(position);
   }
@@ -1041,18 +1053,7 @@ void MrsUavPx4Api::callbackOdometryLocal(const nav_msgs::msg::Odometry::ConstSha
   // | -------------------- publish odometry -------------------- |
 
   if (_capabilities_.produces_odometry) {
-
-    if (_capabilities_.produces_gnss and _ref_latlon_init) {
-
-      auto odom_new                 = odom;
-      odom_new.pose.pose.position.x = correct_x;
-      odom_new.pose.pose.position.y = correct_y;
-      common_handlers_->publishers.publishOdometry(odom_new);
-
-    } else {
-
-      common_handlers_->publishers.publishOdometry(odom);
-    }
+    common_handlers_->publishers.publishOdometry(odom);
   }
 }
 
