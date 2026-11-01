@@ -1,25 +1,25 @@
-hw_interface_plugin: "mrs_uav_px4_api::MrsUavPx4Api"
-plugin:
+mrs_uav_hw_api:
 
-  mavros_timeout: 1.0 # [s]
-  mavros_passable_delay: 0.05 # [s]
-  
-  gnss:
-    utm_zone: "32T"
-    utm_x: 465710.758973
-    utm_y: 5249465.43086
-    amsl: 340.0
-  
-  input_mode:
-    control_group: false
-    attitude_rate: true
-    attitude:      true
-  
+  hw_interface_plugin: "mrs_uav_px4_api::MrsUavPx4Api"
+
+  inputs:
+    actuators:             false # not supported
+    control_group:         false
+    attitude_rate:         true
+    attitude:              true
+    acceleration_hdg_rate: false # not supported
+    acceleration_hdg:      false # not supported
+    velocity_hdg_rate:     false # not supported
+    velocity_hdg:          false # not supported
+    position:              false # not supported
+    feedforward:           false # not supported
+
   outputs:
     distance_sensor:      true
-    gnss:                 true
+    gnss:                 true # also the reference for the UTM correction of position and odometry
     gnss_status:          true
-    rtk:                  false # TODO implement RTK
+    rtk:                  false # only in simulation
+    ground_truth:         false # only in simulation
     imu:                  true
     altitude:             true
     magnetometer_heading: true
@@ -32,4 +32,15 @@ plugin:
     velocity:             true
     angular_velocity:     true
     odometry:             true
-    ground_truth:         true
+
+  plugin:
+
+    mavros_state:
+      timeout: 1.0 # [s]
+      warning_delay: 0.05 # [s]
+
+    gnss:
+      utm_zone: "32T"
+      utm_x: 465710.758973
+      utm_y: 5249465.43086
+      amsl: 340.0
