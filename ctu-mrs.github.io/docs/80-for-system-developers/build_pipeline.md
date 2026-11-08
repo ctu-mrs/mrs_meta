@@ -101,8 +101,8 @@ MRS packages are distributed through three Launchpad PPAs corresponding to speci
 Historically in ROS 1, repositories used `master`, `release_candidate`, and `release`. However, having generic `master` or `main` branches causes substantial confusion—especially in newer repositories where a `master` or `main` branch might exist as a default repository branch with **no ROS 1 / Noetic content whatsoever**.
 
 To eliminate ambiguity, the clean standard across the MRS organization is:
-- **ROS 2 Standard**: `ros2`, `ros2_release_candidate`, and `ros2_release`
-- **ROS 1 Standard (Clean)**: `ros1`, `ros1_release_candidate`, and `ros1_release` (migrating away from generic `master`, `release_candidate`, and `release`)
+- **ROS 2 Standard**: `ros2`, `ros2_release_candidate`, and `ros2_release` (with `ros2_devel` for development/PR feature branches)
+- **ROS 1 Standard (Clean)**: `ros1`, `ros1_release_candidate`, and `ros1_release` (migrating away from legacy `master`, `release_candidate`, `release`, and `devel` &rarr; `ros1_devel`)
 - **Wildcard Ruleset Synergy**: Using wildcard patterns like `*release` and `*release_candidate` in GitHub rulesets cleanly protects both modern prefixed branches (`ros2_release`, `ros1_release`) and legacy branches (`release`) simultaneously without duplicate rules.
 
 ---
@@ -180,16 +180,6 @@ Before configuring GitHub Rulesets, **collaborators or teams must have access to
 Team membership, responsibilities, and repository ownership naturally vary across packages. The team roles below reflect a **suggested convention and convenient starting point** for repositories in the `ctu-mrs` organization, rather than a rigid mandate. Repository owners are encouraged to adapt these suggestions—for instance, by substituting individual maintainers or custom teams depending on who actively maintains the package.
 :::
 
-1. Open your repository on GitHub.
-2. Go to **Settings** &rarr; **Collaborators and teams**.
-3. Under **Manage access**, consider granting access according to your project's needs:
-   - **Suggested Maintainer Access (`Maintain` role)**:
-     - *Example group*: **`MRS Core developers`** (`@ctu-mrs/mrs-core-developers`) or designated individual package maintainers.
-     - *Purpose*: Responsible for repository settings, triage, and staging release candidates (`*release_candidate`).
-   - **Suggested Contributor Access (`Write` role)**:
-     - *Example group*: **`MRS UAV System developers`** (`@ctu-mrs/mrs-uav-system-developers`) or active package contributors.
-     - *Purpose*: Day-to-day development on `ros2` or `ros1`, opening pull requests, and pushing feature branches.
-
 ![Collaborators and Teams Configuration](fig/image1.png)
 
 ---
@@ -200,49 +190,154 @@ Modern GitHub uses **Rulesets** (located in **Settings** &rarr; **Rules** &rarr;
 
 ![Legacy Branch Protection vs Rulesets](fig/image4.png)
 
-We recommend setting up **two rulesets**:
+---
 
-#### Ruleset 1: `release` (Strict Bot Protection)
-Protects all production release branches so only `ctumrsbot` can update them:
-- **Ruleset Name**: `release`
+#### Fast Setup: Import Pre-configured Rulesets (Recommended)
+
+You can import all three rulesets into any repository in seconds using the pre-configured JSON files:
+
+1. In your repository on GitHub, navigate to **Settings** &rarr; **Rules** &rarr; **Rulesets**.
+2. Click **New ruleset** &rarr; **Import a ruleset**.
+3. Import the three ruleset definitions:
+   - **`delete_force_push.json`** ([download `/rulesets/delete_force_push.json`](/rulesets/delete_force_push.json))
+   - **`release.json`** ([download `/rulesets/release.json`](/rulesets/release.json))
+   - **`release_candidate.json`** ([download `/rulesets/release_candidate.json`](/rulesets/release_candidate.json))
+
+<details>
+<summary>Click to view JSON definitions</summary>
+
+**`delete_force_push.json`**:
+```json
+{
+  "name": "delete_force_push",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/heads/ros2",
+        "refs/heads/ros1",
+        "~DEFAULT_BRANCH",
+        "refs/heads/*release_candidate",
+        "refs/heads/*release"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    }
+  ],
+  "bypass_actors": []
+}
+```
+
+**`release.json`**:
+```json
+{
+  "name": "release",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/heads/*release"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "type": "creation"
+    },
+    {
+      "type": "update",
+      "parameters": {
+        "update_allows_fetch_and_merge": false
+      }
+    }
+  ],
+  "bypass_actors": [
+    {
+      "actor_id": 154206578,
+      "actor_type": "User",
+      "bypass_mode": "always"
+    }
+  ]
+}
+```
+
+**`release_candidate.json`**:
+```json
+{
+  "name": "release_candidate",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/heads/*release_candidate"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "type": "creation"
+    },
+    {
+      "type": "update",
+      "parameters": {
+        "update_allows_fetch_and_merge": false
+      }
+    }
+  ],
+  "bypass_actors": [
+    {
+      "actor_id": 3812406,
+      "actor_type": "Team",
+      "bypass_mode": "always"
+    }
+  ]
+}
+```
+</details>
+
+---
+
+#### Manual Configuration Reference
+
+If configuring the rulesets manually through the GitHub Web UI:
+
+##### Ruleset 1: `delete_force_push` (Universal Protection)
+Protects all development, staging, and production branches against deletions and force pushes:
+- **Ruleset Name**: `delete_force_push`
 - **Enforcement status**: `Active`
-- **Bypass list**:
-  - Add **`ctumrsbot`** (User) &rarr; Set to **Always allow**.
+- **Bypass list**: *Leave completely empty (no bypass)*.
 - **Target branches**:
-  - Add target &rarr; **Include by pattern** &rarr; `*release`
-  - *(Automatically matches `ros2_release`, `ros1_release`, and legacy `release`)*.
+  - Add target &rarr; **Default branch** (`~DEFAULT_BRANCH`)
+  - Add target &rarr; **Include by pattern**:
+    - `refs/heads/ros2`
+    - `refs/heads/ros1`
+    - `refs/heads/*release_candidate`
+    - `refs/heads/*release`
 - **Branch rules**:
-  - &check; **Restrict creations**
-  - &check; **Restrict updates**
-  - &check; **Restrict deletions**
-  - &check; **Block force pushes** (checked by default)
-
-![Ruleset configuration for release](fig/image2.png)
-
-#### Ruleset 2: `release_candidate` (Restricted to Maintainers)
-Restricts candidate promotions so only authorized package maintainers can stage releases:
-- **Ruleset Name**: `release_candidate`
-- **Enforcement status**: `Active`
-- **Bypass list**:
-  - Add your designated maintainers (e.g. the **`MRS Core developers`** team, or individual package leads) &rarr; Set to **Always allow**.
-- **Target branches**:
-  - Add target &rarr; **Include by pattern** &rarr; `*release_candidate`
-  - *(Automatically matches `ros2_release_candidate`, `ros1_release_candidate`, and legacy `release_candidate`)*.
-- **Branch rules**:
-  - &check; **Restrict creations**
-  - &check; **Restrict updates**
   - &check; **Restrict deletions**
   - &check; **Block force pushes**
 
+##### Ruleset 2: `release` (Strict Bot Protection)
+Protects all production release branches so only `ctumrsbot` can update them:
+
+![Ruleset configuration for release](fig/image2.png)
+
+##### Ruleset 3: `release_candidate` (Restricted to Maintainers)
+Restricts candidate promotions so only authorized package maintainers can stage releases:
+
 ![Ruleset configuration for release candidate](fig/image3.png)
-
-:::tip Recommended Simplified 2-Ruleset Alternative
-You can also protect development branches and candidate branches together in a single **`default`** ruleset:
-- **Ruleset 1 (`release`)**: Target `*release`, bypass for **`ctumrsbot` only**.
-- **Ruleset 2 (`default`)**: Target `ros2`, `ros1`, and `*release_candidate`, granting bypass to your designated maintainers and contributors (e.g., `MRS Core developers` and `MRS UAV System developers`, or your repository's maintainer list).
-
-![Default combined ruleset](fig/image5.png)
-:::
 
 ---
 
@@ -278,6 +373,7 @@ jobs:
 #### 2. `.github/workflows/ros_build_test.yml`
 Tests pull requests and development branches without deploying to PPAs:
 
+##### For ROS 2 (`ros2_devel` &rarr; `ros2`):
 ```yaml
 name: ros_build_test
 
@@ -325,18 +421,6 @@ mrs_robofly_core:
     full_test_coverage: false
 ```
 
-#### Field Explanations:
-- **`architecture`**: Architecture targets: `[amd64, arm64]`.
-- **`source`**: The HTTPS git clone URL.
-- **`gitman`**: Set `true` if compilation depends on a `.gitman.yaml` configuration.
-- **`git_refs`**: Branch names for `unstable`, `testing`, and `stable`.
-- **`generate_apt_package`**: Set `true` to build binary and source Debian packages for the PPAs.
-- **`generate_docker_image`**: Set `true` if the package generates a standalone Docker container image.
-- **`nix`**: Whether to generate Nix derivations.
-- **`ros_test`**:
-  - `enabled`: `true` to run automated unit/integration tests during buildfarm runs.
-  - `full_test_coverage`: Enables test coverage metrics.
-
 ---
 
 ## 5. Container Registry (GHCR) Access
@@ -351,7 +435,7 @@ $ docker pull ghcr.io/ctu-mrs/buildfarm2:jazzy_builder_amd_36126839068
 Error response from daemon: denied
 ```
 
-![GitHub Container Registry Package Settings](fig/image6.png)
+![GitHub Container Registry Package Settings](fig/image5.png)
 
 ### Why It Happens & How to Fix It
 GitHub Packages images belong to the organization and are private by default:
@@ -375,7 +459,3 @@ GitHub Packages images belong to the organization and are private by default:
 | Branch Rulesets | Package Repo &rarr; Settings &rarr; Rules &rarr; Rulesets | Repository Admins |
 | Register Package | `buildfarm2/mrs.yaml` | Buildfarm Maintainers |
 | Builder Image Access | GitHub Org &rarr; Packages &rarr; Package Settings | Organization Admins |
-
-:::note Note on Team Roles
-Collaborator teams and access levels listed above are recommended guidelines. Repository owners may assign permissions to individual maintainers or alternative teams to best match who is actively developing and maintaining the codebase.
-:::

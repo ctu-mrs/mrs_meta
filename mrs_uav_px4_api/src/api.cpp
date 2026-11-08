@@ -36,8 +36,12 @@
 #include <mavros_msgs/msg/actuator_control.hpp>
 #include <mavros_msgs/msg/gpsraw.hpp>
 
-#include <format>
+#include <algorithm>
+#include <atomic>
+#include <functional>
+#include <optional>
 #include <string>
+#include <vector>
 //}
 
 /* defines //{ */
@@ -108,17 +112,14 @@ public:
   std::tuple<bool, std::string> callbackOffboard(void);
 
 private:
-  bool is_initialized_ = false;
+  std::atomic<bool> is_initialized_ = false;
 
   // | -------------------- errorgraph ------------------- |
   enum class error_type_t : uint16_t
   {
     not_receiving_mavros_state,
-    not_receiving_ground_truth,
-    not_receiving_rtk,
-    not_receiving_gps,
-    not_receiving_distance_sensor,
-    not_receiving_imu,
+    not_receiving_outputs,
+    no_mavros_subscriber,
   };
 
   std::shared_ptr<mrs_lib::errorgraph::ErrorPublisher> error_publisher_;
@@ -136,10 +137,10 @@ private:
   std::string _body_frame_name_;
   std::string _world_frame_name_;
 
-  double _mavros_state_timeout_;
-  // Needs a default value
-  rclcpp::Duration _general_topic_timeout_ = rclcpp::Duration::from_seconds(1);
+  double           _mavros_state_timeout_;
   double           _mavros_state_warning_delay_;
+  rclcpp::Duration _topic_timeout_default_       = rclcpp::Duration(0, 0);
+  rclcpp::Duration _topic_timeout_battery_state_ = rclcpp::Duration(0, 0);
 
   bool _simulation_;
 
@@ -198,6 +199,8 @@ private:
   void initPublishers();
 
   void timeoutMavrosState(void);
+  void checkOutputs(void);
+  void checkInputs(void);
 
   uint8_t airborne(const bool connected);
 
@@ -213,7 +216,6 @@ private:
   // | ------------------------- timers ------------------------- |
 
   std::shared_ptr<TimerType> timer_main_;
-  std::shared_ptr<TimerType> timer_topic_check_;
 
   void timerMain();
 
@@ -231,23 +233,34 @@ private:
   std::mutex                     mutex_angular_velocity_;
   geometry_msgs::msg::Vector3    angular_velocity_;
 
-  template <class SubscriberHandler_T, typename CbkMsg_T>
-  static void init_subscriber_handler(MrsUavPx4Api *this_ptr, SubscriberHandler_T &subscriber_handler, const mrs_lib::SubscriberHandlerOptions &options,
-                                      const std::string &topic, CbkMsg_T cbk_msg, error_type_t error_type, const std::string &error_msg) {
-    const typename SubscriberHandler_T::message_callback_t message_callback = [this_ptr, cbk_msg](const auto &msg) { (this_ptr->*cbk_msg)(msg); };
+  // the source topics of the requested outputs, checked by checkOutputs() and reported to the errorgraph together
+  struct checked_topic_t
+  {
+    std::string                                  name;
+    std::function<std::optional<rclcpp::Time>()> last_msg_time; // empty before the first message
+    bool                                         from_fcu;      // checked only while the FCU is connected
+    rclcpp::Duration                             timeout;
+  };
 
-    // like mrs_lib's default timeout callback, no handler lock needed
-    const typename SubscriberHandler_T::timeout_callback_t timeout_callback = [this_ptr, sh = &subscriber_handler, error_type,
-                                                                               error_msg](const auto &topic_name, const auto &last_msg) {
-      const rclcpp::Duration since_msg = this_ptr->clock_->now() - last_msg;
-      const std::string      resolved  = this_ptr->node_->get_node_topics_interface()->resolve_topic_name(topic_name);
-      RCLCPP_WARN_STREAM(this_ptr->node_->get_logger(), "Did not receive any message from topic '"
-                                                            << resolved << "' for " << std::to_string(since_msg.seconds()) << "s (" << sh->getNumPublishers()
-                                                            << " QoS-compatible publishers on this topic)");
-      this_ptr->error_publisher_->addGeneralError(error_type, error_msg);
-    };
+  std::vector<checked_topic_t> checked_topics_;
+  rclcpp::Time                 topics_since_; // the first valid time of the main timer, the reference for the topics without a message
 
-    subscriber_handler = SubscriberHandler_T(options, topic, timeout_callback, message_callback);
+  // the last Mavros state when the input lost its subscriber, used only by checkInputs()
+  std::optional<rclcpp::Time> attitude_no_subscriber_since_;
+  std::optional<rclcpp::Time> actuator_control_no_subscriber_since_;
+
+  template <class SubscriberHandler_T>
+  void addCheckedTopic(SubscriberHandler_T &subscriber_handler, const bool from_fcu, const rclcpp::Duration &timeout) {
+    checked_topics_.push_back({subscriber_handler.topicName(),
+                               [&subscriber_handler]() -> std::optional<rclcpp::Time> {
+                                 return subscriber_handler.hasMsg() ? std::optional(subscriber_handler.lastMsgTime()) : std::nullopt;
+                               },
+                               from_fcu, timeout});
+  }
+
+  template <class SubscriberHandler_T>
+  void addCheckedTopic(SubscriberHandler_T &subscriber_handler, const bool from_fcu) {
+    addCheckedTopic(subscriber_handler, from_fcu, _topic_timeout_default_);
   }
 };
 
@@ -292,6 +305,9 @@ void MrsUavPx4Api::initialize(const rclcpp::Node::SharedPtr &node, std::shared_p
 
   param_loader->loadParam("mavros_state/timeout", _mavros_state_timeout_);
   param_loader->loadParam("mavros_state/warning_delay", _mavros_state_warning_delay_);
+
+  param_loader->loadParam("topic_timeout/default", _topic_timeout_default_);
+  param_loader->loadParam("topic_timeout/battery_state", _topic_timeout_battery_state_);
 
   param_loader->loadParam("gnss/utm_x", _sim_rtk_utm_x_);
   param_loader->loadParam("gnss/utm_y", _sim_rtk_utm_y_);
@@ -379,11 +395,10 @@ mrs_msgs::msg::HwApiStatus MrsUavPx4Api::getStatus() {
 
   mrs_msgs::msg::HwApiStatus status;
 
-  status.stamp = clock_->now();
-
   {
     std::scoped_lock lock(mutex_status_);
 
+    status.stamp     = clock_->now();
     status.armed     = armed_;
     status.offboard  = offboard_;
     status.connected = connected_;
@@ -727,7 +742,7 @@ void MrsUavPx4Api::initSubscribers() {
   mrs_lib::SubscriberHandlerOptions shopts;
   shopts.node                                = node_;
   shopts.node_name                           = "MrsHwPx4Api";
-  shopts.no_message_timeout                  = rclcpp::Duration::from_seconds(1.0);
+  shopts.no_message_timeout                  = mrs_lib::no_timeout; // checkOutputs() reports the topics without data
   shopts.threadsafe                          = true;
   shopts.autostart                           = true;
   shopts.subscription_options.callback_group = cbkgrp_subs_;
@@ -735,71 +750,81 @@ void MrsUavPx4Api::initSubscribers() {
 
   if (_capabilities_.produces_ground_truth || _capabilities_.produces_rtk) {
     sh_ground_truth_ = mrs_lib::SubscriberHandler<nav_msgs::msg::Odometry>(shopts, "~/ground_truth_in", &MrsUavPx4Api::callbackGroundTruth, this);
+    addCheckedTopic(sh_ground_truth_, false);
   }
 
   /* if (!_simulation_) { */
   /* sh_rtk_ = mrs_lib::SubscriberHandler<mrs_modules_msgs::msg::Bestpos>(shopts, "rtk_in", &MrsUavPx4Api::callbackRTK, this); */
   /* } */
 
-  init_subscriber_handler(this, sh_mavros_state_, shopts, "~/mavros_state_in", &MrsUavPx4Api::callbackMavrosState, error_type_t::not_receiving_mavros_state,
-                          "Not receiving Mavros state messages");
+  sh_mavros_state_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::State>(shopts, "~/mavros_state_in", &MrsUavPx4Api::callbackMavrosState, this);
 
   if (_capabilities_.produces_position || _capabilities_.produces_velocity || _capabilities_.produces_odometry) {
     sh_mavros_odometry_local_ =
         mrs_lib::SubscriberHandler<nav_msgs::msg::Odometry>(shopts, "~/mavros_local_position_in", &MrsUavPx4Api::callbackOdometryLocal, this);
+    addCheckedTopic(sh_mavros_odometry_local_, true);
   }
 
   // odometry takes its orientation and angular velocity from here too
   if (_capabilities_.produces_orientation || _capabilities_.produces_angular_velocity || _capabilities_.produces_odometry) {
     sh_mavros_odometry_in_ = mrs_lib::SubscriberHandler<nav_msgs::msg::Odometry>(shopts, "~/mavros_odometry_in", &MrsUavPx4Api::callbackOdometryIn, this);
+    addCheckedTopic(sh_mavros_odometry_in_, true);
   }
 
   if (_capabilities_.produces_gnss) {
-    init_subscriber_handler(this, sh_mavros_gps_, shopts, "~/mavros_global_position_in", &MrsUavPx4Api::callbackNavsatFix, error_type_t::not_receiving_gps,
-                            "Not receiving GPS data");
+    sh_mavros_gps_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::NavSatFix>(shopts, "~/mavros_global_position_in", &MrsUavPx4Api::callbackNavsatFix, this);
+    addCheckedTopic(sh_mavros_gps_, true);
   }
 
   if (_capabilities_.produces_distance_sensor) {
-    init_subscriber_handler(this, sh_mavros_distance_sensor_, shopts, "~/mavros_garmin_in", &MrsUavPx4Api::callbackDistanceSensor,
-                            error_type_t::not_receiving_distance_sensor, "Not receiving distance sensor data");
+    sh_mavros_distance_sensor_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::Range>(shopts, "~/mavros_garmin_in", &MrsUavPx4Api::callbackDistanceSensor, this);
+    addCheckedTopic(sh_mavros_distance_sensor_, true);
   }
 
   if (_capabilities_.produces_imu) {
-    init_subscriber_handler(this, sh_mavros_imu_, shopts, "~/mavros_imu_in", &MrsUavPx4Api::callbackImu, error_type_t::not_receiving_imu,
-                            "Not receiving IMU data");
+    sh_mavros_imu_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::Imu>(shopts, "~/mavros_imu_in", &MrsUavPx4Api::callbackImu, this);
+    addCheckedTopic(sh_mavros_imu_, true);
   }
 
   if (_capabilities_.produces_magnetometer_heading) {
     sh_mavros_magnetometer_heading_ =
         mrs_lib::SubscriberHandler<std_msgs::msg::Float64>(shopts, "~/mavros_magnetometer_in", &MrsUavPx4Api::callbackMagnetometer, this);
+    addCheckedTopic(sh_mavros_magnetometer_heading_, true);
   }
 
   if (_capabilities_.produces_magnetic_field) {
     sh_mavros_magnetic_field_ =
         mrs_lib::SubscriberHandler<sensor_msgs::msg::MagneticField>(shopts, "~/mavros_magnetic_field_in", &MrsUavPx4Api::callbackMagneticField, this);
+    addCheckedTopic(sh_mavros_magnetic_field_, true);
   }
 
   if (_capabilities_.produces_altitude) {
     sh_mavros_altitude_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::Altitude>(shopts, "~/mavros_altitude_in", &MrsUavPx4Api::callbackAltitude, this);
+    addCheckedTopic(sh_mavros_altitude_, true);
   }
 
   if (_capabilities_.produces_gnss_status) {
     sh_gps_status_raw_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::GPSRAW>(shopts, "~/mavros_gps_status_raw_in", &MrsUavPx4Api::callbackGpsStatusRaw, this);
-  }
-
-  // In simulation ignore the timeout for RC channels and battery state
-  if (_simulation_) {
-    shopts.no_message_timeout = mrs_lib::no_timeout;
+    addCheckedTopic(sh_gps_status_raw_, true);
   }
 
   if (_capabilities_.produces_rc_channels || _capabilities_.produces_rc_rssi) {
     sh_mavros_rc_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::RCIn>(shopts, "~/mavros_rc_in", &MrsUavPx4Api::callbackRC, this);
+
+    // not in simulation, PX4 SITL has no RC and battery
+    if (!_simulation_) {
+      addCheckedTopic(sh_mavros_rc_, true);
+    }
   }
 
   sh_mavros_extended_state_ = mrs_lib::SubscriberHandler<mavros_msgs::msg::ExtendedState>(shopts, "~/mavros_extended_state_in");
 
   if (_capabilities_.produces_battery_state) {
     sh_mavros_battery_ = mrs_lib::SubscriberHandler<sensor_msgs::msg::BatteryState>(shopts, "~/mavros_battery_in", &MrsUavPx4Api::callbackBattery, this);
+
+    if (!_simulation_) {
+      addCheckedTopic(sh_mavros_battery_, true, _topic_timeout_battery_state_);
+    }
   }
 }
 
@@ -820,6 +845,104 @@ void MrsUavPx4Api::initPublishers() {
 
 //}
 
+/* checkOutputs() //{ */
+
+// reports the requested outputs whose source topic has no message for longer than the timeout; the data from the FCU only while it is connected,
+// otherwise the missing connection is the problem
+void MrsUavPx4Api::checkOutputs(void) {
+
+  const rclcpp::Time now             = clock_->now();
+  const bool         connected       = connected_;
+  const rclcpp::Time connected_since = mrs_lib::get_mutexed(mutex_status_, connected_since_);
+  const rclcpp::Time last_state      = mrs_lib::get_mutexed(mutex_last_mavros_state_time_, last_mavros_state_time_);
+
+  std::string not_receiving;
+
+  for (const auto &topic : checked_topics_) {
+
+    if (topic.from_fcu && !connected) {
+      continue;
+    }
+
+    rclcpp::Time since = topic.from_fcu ? connected_since : topics_since_;
+
+    if (const auto last_msg_time = topic.last_msg_time()) {
+      since = std::max(since, *last_msg_time);
+    }
+
+    // the data from the FCU is aged at the last Mavros state: a lost link stops both, so it is reported only as the connection
+    const rclcpp::Time reference = topic.from_fcu ? last_state : now;
+
+    if (reference - since > topic.timeout) {
+      not_receiving += (not_receiving.empty() ? "Not receiving " : ", ") + topic.name;
+    }
+  }
+
+  if (!not_receiving.empty()) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "%s", not_receiving.c_str());
+    error_publisher_->addGeneralError(error_type_t::not_receiving_outputs, not_receiving);
+  }
+}
+
+//}
+
+/* checkInputs() //{ */
+
+// reports the requested inputs whose Mavros topic has no subscriber, i.e. the commands are dropped
+void MrsUavPx4Api::checkInputs(void) {
+
+  bool         connected;
+  rclcpp::Time last_state;
+
+  // together, the Mavros state callback sets both under mutex_status_
+  {
+    std::scoped_lock lock(mutex_status_);
+
+    connected  = connected_;
+    last_state = mrs_lib::get_mutexed(mutex_last_mavros_state_time_, last_mavros_state_time_);
+  }
+
+  if (!connected) {
+    attitude_no_subscriber_since_.reset();
+    actuator_control_no_subscriber_since_.reset();
+    return;
+  }
+
+  std::string no_subscriber;
+
+  const auto check = [&no_subscriber, &last_state, this](auto &publisher_handler, std::optional<rclcpp::Time> &since, const std::string &plugin) {
+    if (publisher_handler.getNumSubscribers() > 0) {
+      since.reset();
+      return;
+    }
+
+    if (!since) {
+      since = last_state;
+    }
+
+    // aged at the last Mavros state: a dead Mavros is reported only as the connection
+    if (last_state - *since > _topic_timeout_default_) {
+      no_subscriber +=
+          (no_subscriber.empty() ? "No Mavros subscriber on " : ", ") + publisher_handler.topicName() + " (is " + plugin + " in plugin_allowlist?)";
+    }
+  };
+
+  if (_capabilities_.accepts_attitude_cmd || _capabilities_.accepts_attitude_rate_cmd) {
+    check(ph_mavros_attitude_target_, attitude_no_subscriber_since_, "setpoint_raw");
+  }
+
+  if (_capabilities_.accepts_control_group_cmd) {
+    check(ph_mavros_actuator_control_, actuator_control_no_subscriber_since_, "actuator_control");
+  }
+
+  if (!no_subscriber.empty()) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "%s", no_subscriber.c_str());
+    error_publisher_->addGeneralError(error_type_t::no_mavros_subscriber, no_subscriber);
+  }
+}
+
+//}
+
 /* timeoutMavrosState() //{ */
 
 void MrsUavPx4Api::timeoutMavrosState(void) {
@@ -828,11 +951,23 @@ void MrsUavPx4Api::timeoutMavrosState(void) {
     return;
   }
 
-  if (!sh_mavros_state_.hasMsg()) {
-    return;
-  }
+  // the same text in the log and in the errorgraph
+  const auto report = [this](const std::string &text) {
+    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "%s", text.c_str());
+    error_publisher_->addGeneralError(error_type_t::not_receiving_mavros_state, text);
+  };
 
   auto last_mavros_state_time = mrs_lib::get_mutexed(mutex_last_mavros_state_time_, last_mavros_state_time_);
+
+  // before the first connected state the start of the main timer is the reference
+  if (last_mavros_state_time.nanoseconds() == 0) {
+
+    if ((clock_->now() - topics_since_).seconds() > _mavros_state_timeout_) {
+      report("No Mavros state (Mavros not running or FCU not connected)");
+    }
+
+    return;
+  }
 
   const auto time = clock_->now() - last_mavros_state_time;
 
@@ -843,6 +978,11 @@ void MrsUavPx4Api::timeoutMavrosState(void) {
     {
       std::scoped_lock lock(mutex_status_);
 
+      // a new state arrived meanwhile
+      if (mrs_lib::get_mutexed(mutex_last_mavros_state_time_, last_mavros_state_time_) != last_mavros_state_time) {
+        return;
+      }
+
       was_connected = connected_;
 
       connected_ = false;
@@ -851,22 +991,15 @@ void MrsUavPx4Api::timeoutMavrosState(void) {
       mode_      = "";
     }
 
-    RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000, "Did not receive Mavros state for more than '%.3f s'", time.seconds());
-
-    const std::string error_msg = std::format("Not receiving Mavros state for more than '{:.3f} s'", time.seconds());
-    error_publisher_->addGeneralError(error_type_t::not_receiving_mavros_state, error_msg.c_str());
-
     // publish once on the connected -> disconnected transition; HwApiManager republishes at 1 Hz afterwards
     if (was_connected) {
-
-      rclcpp::Time timestamp = clock_->now();
 
       mrs_msgs::msg::HwApiStatus status;
 
       {
         std::scoped_lock lock(mutex_status_);
 
-        status.stamp     = timestamp;
+        status.stamp     = clock_->now();
         status.armed     = armed_;
         status.offboard  = offboard_;
         status.connected = connected_;
@@ -876,11 +1009,14 @@ void MrsUavPx4Api::timeoutMavrosState(void) {
 
       common_handlers_->publishers.publishStatus(status);
     }
-
-    return;
   }
 
-  if (time.seconds() > _mavros_state_warning_delay_) {
+  // connected_ is set false by the timeout above or by Mavros reporting connected=false
+  if (!connected_) {
+
+    report("FCU is not connected");
+
+  } else if (time.seconds() > _mavros_state_warning_delay_) {
 
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
                          "--------------------------------------------------------------------------------------------------------------");
@@ -894,8 +1030,7 @@ void MrsUavPx4Api::timeoutMavrosState(void) {
     RCLCPP_WARN_THROTTLE(node_->get_logger(), *clock_, 1000,
                          "--------------------------------------------------------------------------------------------------------------");
 
-    const std::string error_msg = std::format("Not receiving Mavros state for more than '{:.3f} s'", time.seconds());
-    error_publisher_->addGeneralError(error_type_t::not_receiving_mavros_state, error_msg.c_str());
+    error_publisher_->addGeneralError(error_type_t::not_receiving_mavros_state, "Mavros state is delayed");
   }
 }
 
@@ -992,37 +1127,35 @@ void MrsUavPx4Api::callbackMavrosState(const mavros_msgs::msg::State::ConstShare
 
   } else {
 
+    const rclcpp::Time now = clock_->now();
+
     std::scoped_lock lock(mutex_status_);
 
     if (!connected_) {
-      connected_since_ = clock_->now();
+      connected_since_ = now;
     }
 
     offboard_  = msg->mode == "OFFBOARD";
     armed_     = msg->armed;
     connected_ = true;
     mode_      = msg->mode;
+
+    mrs_lib::set_mutexed(mutex_last_mavros_state_time_, now, last_mavros_state_time_);
   }
 
   // | ----------------- publish the diagnostics ---------------- |
-
-  rclcpp::Time timestamp = clock_->now();
 
   mrs_msgs::msg::HwApiStatus status;
 
   {
     std::scoped_lock lock(mutex_status_);
 
-    status.stamp     = timestamp;
+    status.stamp     = clock_->now();
     status.armed     = armed_;
     status.offboard  = offboard_;
     status.connected = connected_;
     status.airborne  = airborne(status.connected);
     status.mode      = mode_;
-  }
-
-  if (msg->connected) {
-    mrs_lib::set_mutexed(mutex_last_mavros_state_time_, timestamp, last_mavros_state_time_);
   }
 
   common_handlers_->publishers.publishStatus(status);
@@ -1481,9 +1614,18 @@ void MrsUavPx4Api::timerMain() {
     return;
   }
 
-  RCLCPP_INFO_ONCE(node_->get_logger(), "main timer spinning");
+  RCLCPP_INFO_ONCE(node_->get_logger(), "timerMain() spinning");
+
+  // with sim time the clock is valid only after the first /clock
+  if (topics_since_.nanoseconds() == 0) {
+    topics_since_ = clock_->now();
+  }
 
   timeoutMavrosState();
+
+  checkOutputs();
+
+  checkInputs();
 }
 
 //}

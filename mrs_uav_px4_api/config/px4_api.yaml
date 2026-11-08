@@ -39,6 +39,11 @@ mrs_uav_hw_api:
       timeout: 1.0 # [s]
       warning_delay: 0.05 # [s]
 
+    # [s] a requested topic without a message for longer is reported to the errorgraph
+    topic_timeout:
+      default: 1.0
+      battery_state: 3.0 # BATTERY_STATUS is streamed at 1 Hz
+
     gnss:
       utm_zone: "32T"
       utm_x: 465710.758973
