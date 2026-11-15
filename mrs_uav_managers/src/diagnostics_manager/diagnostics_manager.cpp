@@ -47,11 +47,17 @@ void DiagnosticsManager::initialize() {
   mrs_lib::ParamLoader param_loader(node_, "DiagnosticsManager");
 
   std::string custom_config_path;
+  std::string platform_config_path;
 
-  param_loader.loadParam("custom_config", custom_config_path);
+  param_loader.loadParam("custom_config", custom_config_path, std::string(""));
+  param_loader.loadParam("platform_config", platform_config_path, std::string(""));
 
   if (custom_config_path != "") {
     param_loader.addYamlFile(custom_config_path);
+  }
+
+  if (platform_config_path != "") {
+    param_loader.addYamlFile(platform_config_path);
   }
 
   param_loader.addYamlFileFromParam("private_config");
@@ -572,7 +578,13 @@ void DiagnosticsManager::timerHostInfo() {
   if (!is_initialized_) {
     return;
   }
-  host_stats_->update();
+  // a /proc or /sys read error must not kill the node
+  try {
+    host_stats_->update();
+  }
+  catch (const std::exception &e) {
+    RCLCPP_ERROR_THROTTLE(node_->get_logger(), *clock_, 10000, "Failed to update the host stats: %s", e.what());
+  }
 }
 
 //}

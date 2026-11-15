@@ -7,6 +7,7 @@ tmux_options: -f <%= @settings["config"] %>
 # you can modify these
 startup_window: status
 pre_window: export UAV_NAME=uav1;
+            export RUN_TYPE=simulation;
             export UAV_TYPE=x500;
             export PLATFORM_CONFIG=`ros2 pkg prefix mrs_multirotor_simulator`/share/mrs_multirotor_simulator/config/mrs_uav_system/$UAV_TYPE.yaml;
             export USE_SIM_TIME="true";
@@ -23,7 +24,7 @@ windows:
   - hw_api:
       layout: tiled
       panes:
-        - ros2 launch mrs_multirotor_simulator hw_api.launch.py
+        - ros2 launch mrs_multirotor_simulator hw_api.launch.py platform_config:=$PLATFORM_CONFIG
   - core:
       layout: tiled
       panes:

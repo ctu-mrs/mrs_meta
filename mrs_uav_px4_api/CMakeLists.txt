@@ -82,6 +82,22 @@ target_compile_definitions(MrsUavPx4Api_Api PRIVATE USE_ROS_TIMER=${USE_ROS_TIME
 pluginlib_export_plugin_description_file(mrs_uav_hw_api plugins.xml)
 
 ## --------------------------------------------------------------
+## |                           testing                          |
+## --------------------------------------------------------------
+
+if(ENABLE_TESTS)
+
+  if(NOT DEFINED ENV{IN_NIX_SHELL})
+    message(WARNING "Compiling lint tests")
+    find_package(ament_cmake_clang_format REQUIRED)
+    ament_clang_format(CONFIG_FILE "${PROJECT_SOURCE_DIR}/.clang-format")
+    find_package(ament_cmake_xmllint REQUIRED)
+    ament_xmllint()
+  endif()
+
+endif()
+
+## --------------------------------------------------------------
 ## |                           install                          |
 ## --------------------------------------------------------------
 
